@@ -1,4 +1,4 @@
-﻿// ArchiveCommandLine.h
+// ArchiveCommandLine.h
 
 #ifndef ZIP7_INC_ARCHIVE_COMMAND_LINE_H
 #define ZIP7_INC_ARCHIVE_COMMAND_LINE_H
@@ -110,6 +110,8 @@ struct CArcCmdLineOptions
   UStringVector ExcludedArcTypes;
   // **************** NanaZip Modification Start ****************
   CBoolPair OpenFolder;
+  /* Set only by an explicit -sda[-] on this command line. */
+  CBoolPair DeleteArchive;
   // **************** NanaZip Modification End ****************
   
   unsigned Number_for_Out;

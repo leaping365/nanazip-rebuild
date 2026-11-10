@@ -1,4 +1,4 @@
-﻿// ZipRegistry.cpp
+// ZipRegistry.cpp
 
 #include "StdAfx.h"
 
@@ -12,6 +12,7 @@
 #include "../../../Windows/Synchronization.h"
 
 #include "ZipRegistry.h"
+#include "../Explorer/ContextMenuFlags.h"
 
 // **************** NanaZip Modification Start ****************
 #ifndef Z7_SFX
@@ -580,7 +581,18 @@ void CContextMenuInfo::Load()
   ExtractOnOpen.Def = false;
   // **************** NanaZip Modification End ****************
 
+  // 7z one-click, email and checksum stay implemented, but are not shown.
+  // Clear them again after the registry read so an older saved value cannot bring them back.
   Flags = (UInt32)(Int32)-1;
+  Flags &= ~(
+      NContextMenuFlags::kOpen
+      | NContextMenuFlags::kOpenAs
+      | NContextMenuFlags::kCompressTo7z
+      | NContextMenuFlags::kCompressEmail
+      | NContextMenuFlags::kCompressTo7zEmail
+      | NContextMenuFlags::kCompressToZipEmail
+      | NContextMenuFlags::kCRC_Cascaded
+      | NContextMenuFlags::kCRC);
   Flags_Def = false;
   
   CS_LOCK
@@ -603,4 +615,13 @@ void CContextMenuInfo::Load()
   // **************** NanaZip Modification End ****************
 
   Flags_Def = (key.GetValue_IfOk(kContextMenu, Flags) == ERROR_SUCCESS);
+  Flags &= ~(
+      NContextMenuFlags::kOpen
+      | NContextMenuFlags::kOpenAs
+      | NContextMenuFlags::kCompressTo7z
+      | NContextMenuFlags::kCompressEmail
+      | NContextMenuFlags::kCompressTo7zEmail
+      | NContextMenuFlags::kCompressToZipEmail
+      | NContextMenuFlags::kCRC_Cascaded
+      | NContextMenuFlags::kCRC);
 }

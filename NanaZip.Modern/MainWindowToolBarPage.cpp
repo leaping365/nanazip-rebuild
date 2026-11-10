@@ -4,6 +4,9 @@
 #include "MainWindowToolBarPage.g.cpp"
 #endif
 
+#include <winrt/Windows.ApplicationModel.Resources.Core.h>
+#include <winrt/Windows.Foundation.h>
+#include <winrt/Windows.Storage.h>
 #include <winrt/Windows.UI.Xaml.Automation.h>
 #include <winrt/Windows.UI.Xaml.Media.h>
 
@@ -19,6 +22,8 @@ namespace winrt::Mile
 
 #include <appmodel.h>
 #include <ShObjIdl_core.h>
+
+#include <vector>
 
 namespace
 {
@@ -353,13 +358,28 @@ namespace winrt::NanaZip::Modern::implementation
         this->m_DispatcherQueue =
             winrt::DispatcherQueue::GetForCurrentThread();
 
-        std::wstring sponsorButtonLabel = L"[";
-        sponsorButtonLabel += Mile::WinRT::GetLocalizedString(
-            L"NanaZip.Modern/MainWindowToolBarPage/SponsorButton/AcquireText",
-            L"Sponsor NanaZip");
-        sponsorButtonLabel += L"]";
+        // The sponsor label falls back to its resource path when the modern
+        // resource map is unavailable, and the store query can tear the
+        // process down. Keep the button hidden.
+        this->SponsorButton().Visibility(
+            winrt::Windows::UI::Xaml::Visibility::Collapsed);
 
-        this->SponsorButton().Content(winrt::box_value(sponsorButtonLabel));
+        // CommandBar still draws its own "..." overflow beside the explicit
+        // More button, which shows up as two groups of three dots.
+        this->MoreButton().Visibility(
+            winrt::Windows::UI::Xaml::Visibility::Collapsed);
+        auto element = this->AddButton().as<winrt::Windows::UI::Xaml::DependencyObject>();
+        while (element)
+        {
+            if (auto bar = element.try_as<winrt::Windows::UI::Xaml::Controls::CommandBar>())
+            {
+                bar.IsDynamicOverflowEnabled(false);
+                bar.OverflowButtonVisibility(
+                    winrt::Windows::UI::Xaml::Controls::CommandBarOverflowButtonVisibility::Collapsed);
+                break;
+            }
+            element = winrt::Windows::UI::Xaml::Media::VisualTreeHelper::GetParent(element);
+        }
     }
 
     void MainWindowToolBarPage::PageLoaded(
@@ -369,7 +389,8 @@ namespace winrt::NanaZip::Modern::implementation
         UNREFERENCED_PARAMETER(sender);
         UNREFERENCED_PARAMETER(e);
 
-        this->RefreshSponsorButtonContent();
+        this->SponsorButton().Visibility(
+            winrt::Windows::UI::Xaml::Visibility::Collapsed);
     }
 
     void MainWindowToolBarPage::AddButtonClick(
@@ -710,6 +731,38 @@ namespace winrt::NanaZip::Modern::implementation
     }
 }
 
+static void EnsureModernResourceMap()
+{
+    wchar_t path[MAX_PATH]{};
+    HMODULE module = nullptr;
+    if (!::GetModuleHandleExW(
+        GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+        GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+        reinterpret_cast<LPCWSTR>(&EnsureModernResourceMap),
+        &module))
+    {
+        return;
+    }
+    if (::GetModuleFileNameW(module, path, MAX_PATH) == 0)
+    {
+        return;
+    }
+    wchar_t* slash = wcsrchr(path, L'\\');
+    if (!slash)
+    {
+        return;
+    }
+    wcscpy_s(slash + 1, MAX_PATH - static_cast<size_t>(slash + 1 - path), L"NanaZip.Modern.pri");
+    if (::GetFileAttributesW(path) == INVALID_FILE_ATTRIBUTES)
+    {
+        return;
+    }
+    auto file = winrt::Windows::Storage::StorageFile::GetFileFromPathAsync(path).get();
+    std::vector<winrt::Windows::Storage::IStorageFile> files{ file };
+    winrt::Windows::ApplicationModel::Resources::Core::ResourceManager::Current()
+        .LoadPriFiles(files);
+}
+
 EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(
     _In_ HWND ParentWindowHandle,
     _In_ HMENU MoreMenuHandle)
@@ -719,8 +772,58 @@ EXTERN_C LPVOID WINAPI K7ModernCreateMainWindowToolBarPage(
     using Implementation =
         winrt::NanaZip::Modern::implementation::MainWindowToolBarPage;
 
-    Interface Window = winrt::make<Implementation>(
-        ParentWindowHandle,
-        MoreMenuHandle);
-    return winrt::detach_abi(Window);
+    try
+    {
+        EnsureModernResourceMap();
+    }
+    catch (...)
+    {
+    }
+
+    try
+    {
+        Interface Window = winrt::make<Implementation>(
+            ParentWindowHandle,
+            MoreMenuHandle);
+        return winrt::detach_abi(Window);
+    }
+    catch (winrt::hresult_error const& error)
+    {
+        wchar_t buffer[512]{};
+        winrt::hstring maps;
+        try
+        {
+            auto manager = winrt::Windows::ApplicationModel::Resources::Core::ResourceManager::Current();
+            for (auto const& item : manager.AllResourceMaps())
+            {
+                maps = maps + item.Key() + L";";
+            }
+        }
+        catch (...)
+        {
+        }
+        swprintf_s(
+            buffer,
+            L"toolbar hresult %08X maps=%s %s",
+            static_cast<unsigned>(error.code()),
+            maps.c_str(),
+            error.message().c_str());
+        FILE* file = nullptr;
+        if (_wfopen_s(&file, L"C:\\Users\\leaping\\AppData\\Local\\Temp\\nz-fm-load.txt", L"a, ccs=UTF-8") == 0 && file)
+        {
+            fwprintf(file, L"%s\n", buffer);
+            fclose(file);
+        }
+        return nullptr;
+    }
+    catch (...)
+    {
+        FILE* file = nullptr;
+        if (_wfopen_s(&file, L"C:\\Users\\leaping\\AppData\\Local\\Temp\\nz-fm-load.txt", L"a, ccs=UTF-8") == 0 && file)
+        {
+            fwprintf(file, L"toolbar unknown\n");
+            fclose(file);
+        }
+        return nullptr;
+    }
 }

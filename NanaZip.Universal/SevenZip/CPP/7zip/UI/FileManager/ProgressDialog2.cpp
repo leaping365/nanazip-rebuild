@@ -1,4 +1,4 @@
-﻿// ProgressDialog2.cpp
+// ProgressDialog2.cpp
 
 #include "StdAfx.h"
 
@@ -1283,17 +1283,38 @@ INT_PTR CProgressDialog::Create(const UString &title, NWindows::CThread &thread,
     BIG_DIALOG_SIZE(360, 192);
     res = CModalDialog::Create(SIZED_DIALOG(IDD_PROGRESS), wndParent);
 #endif // ******** Annotated 7-Zip Mainline Source Code snippet End ********
+    /* A packaged build can report the modern UI as available when the XAML
+       resources were not shipped. That call then returns without a window,
+       and the blank "Progress Error" box is the only thing the user sees.
+       Fall back to the classic dialog unless the modern window actually
+       displayed its result. */
+    bool ModernShown = false;
     if (::K7ModernAvailable())
     {
-        res = ::K7ModernShowProgressWindow(
-            wndParent,
-            this->_title.Ptr(),
-            this->ShowCompressionInfo,
-            CProgressDialog::ModernWindowHandler,
-            this);
+        try
+        {
+            res = ::K7ModernShowProgressWindow(
+                wndParent,
+                this->_title.Ptr(),
+                this->ShowCompressionInfo,
+                CProgressDialog::ModernWindowHandler,
+                this);
+            ModernShown = (res >= 0 && this->MessagesDisplayed);
+        }
+        catch (...)
+        {
+            res = -1;
+            ModernShown = false;
+        }
     }
-    else
+    if (!ModernShown)
     {
+        if (this->_wasCreated)
+        {
+            this->_wasCreated = false;
+            if (::WaitForSingleObject(thread, 0) == WAIT_OBJECT_0)
+                this->_needClose = true;
+        }
         BIG_DIALOG_SIZE(360, 192);
         res = CModalDialog::Create(SIZED_DIALOG(IDD_PROGRESS), wndParent);
     }
@@ -1782,7 +1803,16 @@ void CProgressThreadVirt::Process()
   if (Result != E_ABORT)
   {
     if (m.IsEmpty() && Result != S_OK)
-      m = HResultToMessage(Result);
+    {
+      // **************** NanaZip Modification Start ****************
+      /* S_FALSE is 1. MyFormatMessage(1) is ERROR_INVALID_FUNCTION
+         ("函数不正确"). Opening an existing file that is not an archive
+         already records "Is not archive" on the progress list. Do not add
+         a second dialog that claims the function is invalid. */
+      if (Result != S_FALSE)
+      // **************** NanaZip Modification End ****************
+        m = HResultToMessage(Result);
+    }
   }
   AddMessageToString(m, FinalMessage.ErrorMessage.Message);
 

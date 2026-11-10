@@ -170,6 +170,10 @@
     <ClCompile Include="SevenZip\CPP\7zip\UI\Common\WorkDir.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\Common\ZipRegistry.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\Explorer\ContextMenu.cpp" />
+    <ClCompile Include="..\NanaZip.UI.Shared\Rename.Model.cpp" />
+    <ClCompile Include="..\NanaZip.UI.Shared\Rename.Dialog.cpp" />
+    <ClInclude Include="..\NanaZip.UI.Shared\Rename.h" />
+    <ClInclude Include="..\NanaZip.UI.Shared\DialogAppearance.h" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\HashGUI.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\GUI\UpdateCallbackGUI2.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\AltStreamsFolder.cpp" />

@@ -1,5 +1,6 @@
 #include "resource.h"
 
+LANGUAGE 9, 1
 STRINGTABLE
 BEGIN
   IDS_CONTEXT_FOLDER      "<Folder>"
@@ -11,9 +12,32 @@ BEGIN
   IDS_CONTEXT_EXTRACT_HERE "Extract Here"
   // **************** NanaZip Modification Start ****************
   IDS_CONTEXT_EXTRACT_HERE_SMART "Extract Here (Smart)"
+  IDS_CONTEXT_EXTRACT_HERE_DELETE "Extract Here and delete"
+  IDS_CONTEXT_EXTRACT_TO_DELETE "Extract to {0} and delete"
+  IDS_CONTEXT_COMPRESS_TO_DELETE "Add to {0} and delete"
   // **************** NanaZip Modification End ****************
   IDS_CONTEXT_EXTRACT_TO  "Extract to {0}"
   IDS_CONTEXT_COMPRESS_TO "Add to {0}"
   IDS_CONTEXT_COMPRESS_EMAIL "Compress and email..."
   IDS_CONTEXT_COMPRESS_TO_EMAIL "Compress to {0} and email"
+END
+
+LANGUAGE 4, 2
+STRINGTABLE
+BEGIN
+  IDS_CONTEXT_FOLDER      "<文件夹>"
+  IDS_CONTEXT_ARCHIVE     "<压缩包>"
+  IDS_CONTEXT_OPEN        "打开压缩包"
+  IDS_CONTEXT_EXTRACT     "解压到其他文件夹..."
+  IDS_CONTEXT_COMPRESS    "新建压缩包..."
+  IDS_CONTEXT_TEST        "测试压缩包"
+  IDS_CONTEXT_EXTRACT_HERE "解压到此处"
+  IDS_CONTEXT_EXTRACT_HERE_SMART "智能解压到此处"
+  IDS_CONTEXT_EXTRACT_HERE_DELETE "解压到此处并删除"
+  IDS_CONTEXT_EXTRACT_TO  "解压到{0}"
+  IDS_CONTEXT_EXTRACT_TO_DELETE "解压到{0}并删除"
+  IDS_CONTEXT_COMPRESS_TO "压缩为{0}"
+  IDS_CONTEXT_COMPRESS_TO_DELETE "压缩为{0}并删除"
+  IDS_CONTEXT_COMPRESS_EMAIL "压缩并邮寄..."
+  IDS_CONTEXT_COMPRESS_TO_EMAIL "压缩为{0}并邮寄"
 END

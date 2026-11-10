@@ -1,4 +1,4 @@
-﻿// ZipRegistry.cpp
+// ZipRegistry.cpp
 
 #include "StdAfx.h"
 
@@ -605,15 +605,13 @@ void CContextMenuInfo::Load()
 
   WriteZone = (UInt32)(Int32)-1;
 
-  /* we can disable email items by default,
-     because email code doesn't work in some systems */
-  Flags = (UInt32)(Int32)-1
-      /*
-      & ~NContextMenuFlags::kCompressEmail
-      & ~NContextMenuFlags::kCompressTo7zEmail
-      & ~NContextMenuFlags::kCompressToZipEmail
-      */
-      ;
+  // Same bits as NContextMenuFlags: 7z one-click, email, checksum.
+  // Kept off even when an older ContextMenu value is stored.
+  const UInt32 kRetiredContextMenuFlags =
+      (1u << 5) | (1u << 6) |
+      (1u << 9) | (1u << 10) | (1u << 11) | (1u << 13) |
+      (1u << 30) | (1u << 31);
+  Flags = ((UInt32)(Int32)-1) & ~kRetiredContextMenuFlags;
   Flags_Def = false;
   
   CS_LOCK
@@ -636,4 +634,5 @@ void CContextMenuInfo::Load()
   // **************** NanaZip Modification End ****************
 
   Flags_Def = (key.GetValue_UInt32_IfOk(kContextMenu, Flags) == ERROR_SUCCESS);
+  Flags &= ~kRetiredContextMenuFlags;
 }

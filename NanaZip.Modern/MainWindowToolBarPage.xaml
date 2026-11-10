@@ -25,7 +25,8 @@
         Background="Transparent"
         DefaultLabelPosition="Collapsed"
         IsDynamicOverflowEnabled="False"
-        IsOpen="False">
+        IsOpen="False"
+        OverflowButtonVisibility="Collapsed">
         <AppBarButton
           x:Name="AddButton"
           Width="48"
@@ -106,12 +107,17 @@
           ToolTipService.ToolTip="[About]" />
         <AppBarSeparator />
         <AppBarButton
-          x:Uid="/NanaZip.Modern/MainWindowToolBarPage/MoreButton"
-          Width="48"
-          AutomationProperties.Name="[More]"
+          x:Name="MoreButton"
+          MinWidth="48"
+          Padding="12,0"
+          AutomationProperties.Name="更多"
           Click="MoreButtonClick"
-          Icon="More"
-          ToolTipService.ToolTip="[More]" />
+          ToolTipService.ToolTip="更多"
+          Visibility="Collapsed">
+          <AppBarButton.Content>
+            <TextBlock Text="更多" />
+          </AppBarButton.Content>
+        </AppBarButton>
       </CommandBar>
       <Button
         x:Name="SponsorButton"
@@ -120,7 +126,8 @@
         VerticalAlignment="Center"
         Background="Transparent"
         Click="SponsorButtonClick"
-        Content="[Sponsor NanaZip]" />
+        Content="[Sponsor NanaZip]"
+        Visibility="Collapsed" />
     </Grid>
   </Grid>
 </Page>

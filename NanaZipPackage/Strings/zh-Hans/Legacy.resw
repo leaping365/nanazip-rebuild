@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <root>
   <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
     <xsd:element name="root" msdata:IsDataSet="true">
@@ -577,22 +577,22 @@
     <value>打开压缩包</value>
   </data>
   <data name="Resource2323" xml:space="preserve">
-    <value>提取文件...</value>
+    <value>解压到其他文件夹...</value>
   </data>
   <data name="Resource2324" xml:space="preserve">
-    <value>添加到压缩包...</value>
+    <value>新建压缩包...</value>
   </data>
   <data name="Resource2325" xml:space="preserve">
     <value>测试压缩包</value>
   </data>
   <data name="Resource2326" xml:space="preserve">
-    <value>提取到当前位置</value>
+    <value>解压到此处</value>
   </data>
   <data name="Resource2327" xml:space="preserve">
-    <value>提取到 {0}</value>
+    <value>解压到{0}</value>
   </data>
   <data name="Resource2328" xml:space="preserve">
-    <value>添加到 {0}</value>
+    <value>压缩为{0}</value>
   </data>
   <data name="Resource2329" xml:space="preserve">
     <value>压缩并邮寄...</value>
@@ -601,7 +601,16 @@
     <value>压缩 {0} 并邮寄</value>
   </data>
   <data name="Resource2331" xml:space="preserve">
-    <value>提取到当前位置(智能)</value>
+    <value>智能解压到此处</value>
+  </data>
+  <data name="Resource2332" xml:space="preserve">
+    <value>解压到此处并删除</value>
+  </data>
+  <data name="Resource2333" xml:space="preserve">
+    <value>解压到{0}并删除</value>
+  </data>
+  <data name="Resource2334" xml:space="preserve">
+    <value>压缩为{0}并删除</value>
   </data>
   <data name="Resource2400" xml:space="preserve">
     <value>文件夹</value>

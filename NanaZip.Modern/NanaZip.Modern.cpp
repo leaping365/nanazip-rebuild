@@ -1,4 +1,4 @@
-﻿/*
+/*
  * PROJECT:    NanaZip.Modern
  * FILE:       NanaZip.Modern.cpp
  * PURPOSE:    Implementation for NanaZip Modern Experience
@@ -25,15 +25,21 @@
 #pragma comment(lib, "comctl32.lib")
 
 #include <winrt/Windows.ApplicationModel.Resources.Core.h>
+#include <winrt/Windows.Storage.h>
 #include <winrt/Windows.UI.Xaml.Hosting.h>
+
+#include <appmodel.h>
 
 #include <mutex>
 #include <map>
+#include <stdio.h>
+#include <vector>
 
 namespace winrt
 {
     using Windows::ApplicationModel::Resources::Core::ResourceManager;
     using Windows::ApplicationModel::Resources::Core::ResourceMap;
+    using Windows::ApplicationModel::Resources::Core::ResourceContext;
 }
 
 namespace
@@ -92,8 +98,23 @@ EXTERN_C LPCWSTR WINAPI K7ModernGetLegacyStringResource(
         return nullptr;
     }
 
-    winrt::hstring Content = LegacyResourceMap.Lookup(
-        ResourceName).Candidates().GetAt(0).ValueAsString();
+    // Candidates().GetAt(0) ignores the user language and often returns English.
+    // Resolve against the view-independent context so zh-CN reads zh-Hans.
+    winrt::hstring Content;
+    try
+    {
+        Content = LegacyResourceMap.GetValue(
+            ResourceName,
+            winrt::ResourceContext::GetForViewIndependentUse()).ValueAsString();
+    }
+    catch (...)
+    {
+        return nullptr;
+    }
+    if (Content.empty())
+    {
+        return nullptr;
+    }
     std::lock_guard Lock(g_CachedLanguageStringResourcesMutex);
     auto Iterator = g_CachedLanguageStringResources.emplace(
         ResourceId,
@@ -116,11 +137,6 @@ EXTERN_C HRESULT WINAPI K7ModernInitialize()
     if (g_AppInstance)
     {
         return S_OK;
-    }
-    if (!::GetMainResourceMap())
-    {
-        // NanaZip.Modern requires resources.pri to get XAML resources.
-        return E_NOINTERFACE;
     }
     try
     {

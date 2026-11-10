@@ -1,4 +1,4 @@
-﻿// GUI.cpp
+// GUI.cpp
 
 #include "StdAfx.h"
 
@@ -20,6 +20,8 @@
 #include "../../../Common/StringConvert.h"
 
 #include "../../../Windows/FileDir.h"
+#include "../../../Windows/FileFind.h"
+#include <wchar.h>
 #include "../../../Windows/NtCheck.h"
 
 #include "../Common/ArchiveCommandLine.h"
@@ -289,6 +291,7 @@ static int Main2()
     ecs->TestMode = eo.TestMode;
     // **************** NanaZip Modification Start ****************
     eo.OpenFolder = options.OpenFolder;
+    eo.DeleteArchive = options.DeleteArchive;
     // **************** NanaZip Modification End ****************
 
     #ifndef Z7_SFX
@@ -352,8 +355,53 @@ static int Main2()
     if (!ecs->IsOK())
       return NExitCode::kFatalError;
     // **************** NanaZip Modification Start ****************
-    else if (eo.OpenFolder.Val) {
+    if (eo.OpenFolder.Val) {
       ShellExecuteW(NULL, NULL, ecs->Stat.OutDir, NULL, NULL, SW_SHOWNORMAL);
+    }
+    /* Archive handles are closed when Extract() returns. Delete only after a
+       real extract that reported no errors. The list stays empty unless -sda
+       was set, so Extract Here and Extract To keep their archives. */
+    /* -sda must not remove the archive when the target folder was never
+       created or nothing was written. A swallowed -o path fails this check.
+       The stored output path keeps a trailing separator; strip it before
+       the directory probe, because some Find calls reject that form. */
+    if (eo.DeleteArchive.Val && !eo.TestMode)
+    {
+      FString producedDir = ecs->Stat.OutDir.IsEmpty()
+          ? eo.OutputDir : ecs->Stat.OutDir;
+      while (!producedDir.IsEmpty()
+          && (producedDir.Back() == L'\\' || producedDir.Back() == L'/'))
+        producedDir.DeleteBack();
+      const bool produced = (ecs->Stat.NumFiles != 0 || ecs->Stat.NumFolders != 0);
+      const bool dirOk = !producedDir.IsEmpty() && NFile::NFind::DoesDirExist(producedDir);
+      if (produced && dirOk)
+        DeleteExtractedArchives(ecs->Stat.ExtractedArcPaths, producedDir);
+      else
+      {
+        wchar_t msg[160];
+        swprintf_s(msg, L"skip delete files=%I64u folders=%I64u dirOk=%d paths=%u",
+            (unsigned long long)ecs->Stat.NumFiles,
+            (unsigned long long)ecs->Stat.NumFolders,
+            dirOk ? 1 : 0,
+            (unsigned)ecs->Stat.ExtractedArcPaths.Size());
+        wchar_t tempDir[MAX_PATH];
+        const DWORD n = ::GetTempPathW(MAX_PATH, tempDir);
+        if (n != 0 && n < MAX_PATH)
+        {
+          FString logPath = tempDir;
+          logPath += L"nanazip-delete.log";
+          HANDLE h = ::CreateFileW(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+              OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+          if (h != INVALID_HANDLE_VALUE)
+          {
+            DWORD written = 0;
+            ::WriteFile(h, msg, (DWORD)(wcslen(msg) * sizeof(wchar_t)), &written, NULL);
+            const wchar_t nl[2] = { L'\r', L'\n' };
+            ::WriteFile(h, nl, sizeof(nl), &written, NULL);
+            ::CloseHandle(h);
+          }
+        }
+      }
     }
     // **************** NanaZip Modification End ****************
   }

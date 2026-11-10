@@ -70,7 +70,7 @@ namespace
     {
         if (static_cast<uint64_t>(-1) == Seconds)
         {
-            return L"N/A";
+            return L"无";
         }
 
         int Hour = static_cast<int>(Seconds / 3600);

@@ -1,4 +1,4 @@
-﻿// Common/Lang.cpp
+// Common/Lang.cpp
 
 #include "StdAfx.h"
 
@@ -28,6 +28,21 @@ bool CLang::Open(CFSTR fileName, const char *id)
 
 const wchar_t *CLang::Get(UInt32 id) const throw()
 {
-    UNREFERENCED_PARAMETER(id);
-    return nullptr;
+    // NanaZip.Modern.dll already resolves Legacy.resw (Resource<id>, zh-Hans).
+    // Load it on demand so this process does not have to link the DLL.
+    using Proc = const wchar_t *(WINAPI *)(UINT32);
+    static Proc proc = []() -> Proc
+    {
+        HMODULE module = ::GetModuleHandleW(L"NanaZip.Modern.dll");
+        if (!module)
+            module = ::LoadLibraryW(L"NanaZip.Modern.dll");
+        if (!module)
+            return nullptr;
+        return reinterpret_cast<Proc>(::GetProcAddress(
+            module,
+            "K7ModernGetLegacyStringResource"));
+    }();
+    if (!proc)
+        return nullptr;
+    return proc(id);
 }

@@ -1,4 +1,4 @@
-﻿// CompressCall.cpp
+// CompressCall.cpp
 
 #include "StdAfx.h"
 
@@ -20,6 +20,9 @@
 #include "../FileManager/RegistryUtils.h"
 
 #include "CompressCall.h"
+
+#include <objbase.h>
+#include <shobjidl_core.h>
 
 using namespace NWindows;
 
@@ -53,6 +56,22 @@ UString GetQuotedString(const UString &s)
   s2 += s;
   s2 += '\"';
   return s2;
+}
+
+/* -o"C:\dir\" is one argument to 7-Zip's own parser, but Windows
+   CommandLineToArgvW treats the final \" as an escaped quote and swallows
+   every later switch, including -sda, into the output path. Strip a trailing
+   separator before quoting. The extractor puts it back with
+   NormalizeDirPathPrefix. A drive root such as C:\ cannot be stripped, so
+   the separator is doubled and the quote still terminates. */
+static UString QuotePathForOutputSwitch(const UString &path)
+{
+  UString s = path;
+  while (s.Len() > 3 && (s.Back() == L'\\' || s.Back() == L'/'))
+    s.DeleteBack();
+  if (!s.IsEmpty() && (s.Back() == L'\\' || s.Back() == L'/'))
+    s += s.Back();
+  return GetQuotedString(s);
 }
 
 static void ErrorMessage(LPCWSTR message)
@@ -189,7 +208,10 @@ HRESULT CompressFiles(
     const UString &arcType,
     bool addExtension,
     const UStringVector &names,
-    bool email, bool showDialog, bool waitFinish)
+    bool email, bool showDialog, bool waitFinish,
+    // **************** NanaZip Modification Start ****************
+    bool deleteSources)
+    // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
   UString params ('a');
@@ -210,6 +232,14 @@ HRESULT CompressFiles(
 
   if (showDialog)
     params += kShowDialogSwitch;
+
+  // **************** NanaZip Modification Start ****************
+  /* One-click commands do not show the Add dialog, so -sdel has to travel
+     with this invocation. The dialog checkbox still owns the switch when
+     the full dialog is shown. */
+  if (deleteSources && !showDialog)
+    params += " -sdel";
+  // **************** NanaZip Modification End ****************
 
   AddLagePagesSwitch(params);
 
@@ -254,7 +284,7 @@ static void ExtractGroupCommand(const UStringVector &arcPaths, UString &params, 
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder)
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract, bool openFolder, bool deleteArchive)
 // **************** NanaZip Modification End ****************
 {
   MY_TRY_BEGIN
@@ -262,7 +292,7 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
   if (!outFolder.IsEmpty())
   {
     params += " -o";
-    params += GetQuotedString(outFolder);
+    params += QuotePathForOutputSwitch(outFolder);
   }
   if (elimDup)
     params += " -spe";
@@ -271,6 +301,10 @@ void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bo
     params += " -sps";
   if (openFolder)
     params += " -sre";
+  /* -sda deletes the source archive after a fully successful extract.
+     It applies only to this invocation. */
+  if (deleteArchive)
+    params += " -sda";
   // **************** NanaZip Modification End ****************
   if (writeZone != (UInt32)(Int32)-1)
   {
@@ -336,6 +370,40 @@ void CalcChecksum(const UStringVector &paths,
   }
   ExtractGroupCommand(paths, params, true);
   MY_TRY_FINISH_VOID
+}
+
+void OpenArchiveInFileManager(const UString &archivePath)
+{
+  // Desktop shortcut:
+  // explorer.exe shell:AppsFolder\NanaZip.LocalDebug.ContextMenu_gt7n2906vqsf8!NanaZip
+  // ActivateApplication is that same packaged launch, and it can carry the path.
+  // A raw CreateProcess of the exe does not show a window.
+  const wchar_t *aumid =
+      L"NanaZip.LocalDebug.ContextMenu_gt7n2906vqsf8!NanaZip";
+  const UString args = GetQuotedString(archivePath);
+
+  const HRESULT initHr = ::CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+  const bool didInit = (initHr == S_OK);
+
+  IApplicationActivationManager *manager = nullptr;
+  HRESULT hr = ::CoCreateInstance(
+      CLSID_ApplicationActivationManager,
+      nullptr,
+      CLSCTX_LOCAL_SERVER,
+      IID_PPV_ARGS(&manager));
+  if (SUCCEEDED(hr) && manager)
+  {
+    ::CoAllowSetForegroundWindow(manager, nullptr);
+    DWORD pid = 0;
+    hr = manager->ActivateApplication(aumid, args.Ptr(), AO_NONE, &pid);
+    manager->Release();
+  }
+
+  if (didInit)
+    ::CoUninitialize();
+
+  if (FAILED(hr))
+    ErrorMessageHRESULT(hr, L"NanaZip");
 }
 
 void Benchmark(bool totalMode)

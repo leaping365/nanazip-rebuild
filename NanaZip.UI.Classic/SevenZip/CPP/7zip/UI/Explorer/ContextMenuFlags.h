@@ -1,4 +1,4 @@
-﻿// ContextMenuFlags.h
+// ContextMenuFlags.h
 
 #ifndef __CONTEXT_MENU_FLAGS_H
 #define __CONTEXT_MENU_FLAGS_H
@@ -22,6 +22,12 @@ namespace NContextMenuFlags
   const UInt32 kCompressTo7zEmail = 1 << 11;
   const UInt32 kCompressToZip = 1 << 12;
   const UInt32 kCompressToZipEmail = 1 << 13;
+
+// **************** NanaZip Modification Start ****************
+  const UInt32 kExtractHereDelete = 1 << 14;
+  const UInt32 kExtractToDelete = 1 << 15;
+  const UInt32 kCompressToZipDelete = 1 << 16;
+// **************** NanaZip Modification End ****************
 
   const UInt32 kCRC_Cascaded = (UInt32)1 << 30;
   const UInt32 kCRC = (UInt32)1 << 31;

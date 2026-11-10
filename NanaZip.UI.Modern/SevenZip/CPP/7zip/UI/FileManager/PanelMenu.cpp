@@ -930,7 +930,8 @@ void CPanel::CreateSevenZipMenu(HMENU menuSpec,
       namePointers.Add(names[i]);
 
     // NFile::NDirectory::MySetCurrentDirectory(currentFolderUnicode);
-    if (contextMenuSpec->InitContextMenu(currentFolderUnicode, &namePointers.Front(),
+    if (contextMenuSpec->InitContextMenu(currentFolderUnicode,
+        operatedIndices.Size() ? &namePointers.Front() : NULL,
         operatedIndices.Size()) == S_OK)
     {
       HRESULT res = contextMenu->QueryContextMenu(menu, 0, kSevenZipStartMenuID,

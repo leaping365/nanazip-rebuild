@@ -42,6 +42,10 @@ public:
     kExtractHereSmart,
     // **************** NanaZip Modification End ****************
     kExtractTo,
+    // **************** NanaZip Modification Start ****************
+    kExtractHereDelete,
+    kExtractToDelete,
+    // **************** NanaZip Modification End ****************
     kTest,
     kCompress,
     kCompressEmail,
@@ -49,13 +53,22 @@ public:
     kCompressTo7zEmail,
     kCompressToZip,
     kCompressToZipEmail,
+    // **************** NanaZip Modification Start ****************
+    kCompressToZipDelete,
+    // **************** NanaZip Modification End ****************
     kHash_CRC32,
     kHash_CRC64,
     kHash_SHA1,
     kHash_SHA256,
     kHash_All,
     kHash_Generate_SHA256,
-    kHash_TestArc
+    kHash_TestArc,
+    kCopyFileAddress,
+    kCopyFileName,
+    kCopyFileNameNoExt,
+    // **************** NanaZip Modification Start ****************
+    kRename,
+    // **************** NanaZip Modification End ****************
   };
   
   MY_UNKNOWN_IMP4_MT(

@@ -2,6 +2,14 @@
 
 #include "StdAfx.h"
 
+// **************** NanaZip Modification Start ****************
+#include "../../../../../../NanaZip.UI.Shared/Rename.h"
+#include "../../../../../../NanaZip.UI.Shared/DialogAppearance.h"
+// **************** NanaZip Modification End ****************
+
+#include <string>
+#include <vector>
+
 #include "../../../Common/ComTry.h"
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -176,17 +184,23 @@ STDMETHODIMP CZipContextMenu::Initialize(LPCITEMIDLIST pidlFolder, LPDATAOBJECT 
   return GetFileNames(dataObject, _fileNames);
 }
 
-HRESULT CZipContextMenu::InitContextMenu(const wchar_t * /* folder */, const wchar_t * const *names, unsigned numFiles)
+HRESULT CZipContextMenu::InitContextMenu(const wchar_t *folder, const wchar_t * const *names, unsigned numFiles)
 {
   _isMenuForFM = true;
   _fileNames.Clear();
+  _dropMode = false;
+  _dropPath.Empty();
   for (UInt32 i = 0; i < numFiles; i++)
   {
-    // MessageBoxW(0, names[i], NULL, 0);
-    // OutputDebugStringW(names[i]);
-    _fileNames.Add(names[i]);
+    if (names)
+      _fileNames.Add(names[i]);
   }
-  _dropMode = false;
+  if (numFiles == 0 && folder && folder[0])
+  {
+    _dropPath = folder;
+    NName::NormalizeDirPathPrefix(_dropPath);
+    _dropMode = !_dropPath.IsEmpty();
+  }
   return S_OK;
 }
 
@@ -216,6 +230,8 @@ static const CContextMenuCommand g_Commands[] =
   CMD_REC( kExtractHere, "ExtractHere", IDS_CONTEXT_EXTRACT_HERE),
   // **************** NanaZip Modification Start ****************
   CMD_REC( kExtractHereSmart, "ExtractHereSmart", IDS_CONTEXT_EXTRACT_HERE_SMART),
+  CMD_REC( kExtractHereDelete, "ExtractHereDelete", IDS_CONTEXT_EXTRACT_HERE_DELETE),
+  CMD_REC( kExtractToDelete, "ExtractToDelete", IDS_CONTEXT_EXTRACT_TO_DELETE),
   // **************** NanaZip Modification End ****************
   CMD_REC( kExtractTo,   "ExtractTo",   IDS_CONTEXT_EXTRACT_TO),
   CMD_REC( kTest,        "Test",        IDS_CONTEXT_TEST),
@@ -224,7 +240,10 @@ static const CContextMenuCommand g_Commands[] =
   CMD_REC( kCompressTo7z,       "CompressTo7z",       IDS_CONTEXT_COMPRESS_TO),
   CMD_REC( kCompressTo7zEmail,  "CompressTo7zEmail",  IDS_CONTEXT_COMPRESS_TO_EMAIL),
   CMD_REC( kCompressToZip,      "CompressToZip",      IDS_CONTEXT_COMPRESS_TO),
-  CMD_REC( kCompressToZipEmail, "CompressToZipEmail", IDS_CONTEXT_COMPRESS_TO_EMAIL)
+  CMD_REC( kCompressToZipEmail, "CompressToZipEmail", IDS_CONTEXT_COMPRESS_TO_EMAIL),
+  // **************** NanaZip Modification Start ****************
+  CMD_REC( kCompressToZipDelete, "CompressToZipDelete", IDS_CONTEXT_COMPRESS_TO_DELETE)
+  // **************** NanaZip Modification End ****************
 };
 
 
@@ -279,6 +298,1150 @@ static UString LangStringAlt(UInt32 id, const char *altString)
   if (s.IsEmpty())
     s = altString;
   return s;
+}
+
+static const wchar_t *CopyFileAddressTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件地址";
+  return L"Copy file address";
+}
+
+static const wchar_t *CopyFileNameTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件名";
+  return L"Copy file name";
+}
+
+static const wchar_t *CopyFileNameNoExtTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件名（无扩展名）";
+  return L"Copy file name (no extension)";
+}
+
+static const wchar_t *CopyFolderAddressTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件夹地址";
+  return L"Copy folder address";
+}
+
+static const wchar_t *CopyFolderNameTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件夹名";
+  return L"Copy folder name";
+}
+
+static bool SelectionIsOnlyFolders(const UStringVector &paths)
+{
+  if (paths.Size() == 0)
+    return false;
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    const DWORD attr = ::GetFileAttributesW(paths[i]);
+    if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY) == 0)
+      return false;
+  }
+  return true;
+}
+
+static bool SelectionIsOnlyFiles(const UStringVector &paths)
+{
+  if (paths.Size() == 0)
+    return false;
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    const DWORD attr = ::GetFileAttributesW(paths[i]);
+    if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY) != 0)
+      return false;
+  }
+  return true;
+}
+
+static std::wstring ParentDirOfWide(const std::wstring &path)
+{
+  std::wstring trimmed = path;
+  while (!trimmed.empty() && (trimmed.back() == L'\\' || trimmed.back() == L'/'))
+    trimmed.pop_back();
+  const size_t slash = trimmed.find_last_of(L"\\/");
+  if (slash == std::wstring::npos)
+    return L"";
+  return trimmed.substr(0, slash);
+}
+
+static std::wstring BaseNameWide(const std::wstring &path)
+{
+  const size_t slash = path.find_last_of(L"\\/");
+  if (slash == std::wstring::npos)
+    return path;
+  return path.substr(slash + 1);
+}
+
+static std::wstring NameWithoutLastExtWide(const std::wstring &name)
+{
+  const size_t dot = name.find_last_of(L'.');
+  if (dot == std::wstring::npos || dot == 0)
+    return name;
+  return name.substr(0, dot);
+}
+
+static std::wstring JoinWide(const std::wstring &dir, const std::wstring &name)
+{
+  std::wstring result = dir;
+  if (!result.empty() && result.back() != L'\\' && result.back() != L'/')
+    result += L'\\';
+  result += name;
+  return result;
+}
+
+static bool WidePathExists(const std::wstring &path)
+{
+  return !path.empty() && ::GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES;
+}
+
+static bool WideIsDirectory(const std::wstring &path)
+{
+  const DWORD attr = ::GetFileAttributesW(path.c_str());
+  return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static std::vector<std::wstring> ToWidePaths(const UStringVector &paths)
+{
+  std::vector<std::wstring> result;
+  for (unsigned i = 0; i < paths.Size(); i++)
+    result.push_back(std::wstring(paths[i].Ptr(), paths[i].Len()));
+  return result;
+}
+
+static bool WidePathsShareParent(const std::vector<std::wstring> &paths)
+{
+  if (paths.empty())
+    return false;
+  const std::wstring parent = ParentDirOfWide(paths[0]);
+  for (size_t i = 0; i < paths.size(); i++)
+  {
+    if (_wcsicmp(ParentDirOfWide(paths[i]).c_str(), parent.c_str()) != 0)
+      return false;
+  }
+  return !parent.empty();
+}
+
+static bool IsDriveRootPath(const wchar_t *path)
+{
+  if (!path || !path[0])
+    return false;
+  wchar_t root[MAX_PATH] = {};
+  if (!::GetVolumePathNameW(path, root, MAX_PATH))
+    return false;
+  std::wstring left = path;
+  std::wstring right = root;
+  while (!left.empty() && (left.back() == L'\\' || left.back() == L'/'))
+    left.pop_back();
+  while (!right.empty() && (right.back() == L'\\' || right.back() == L'/'))
+    right.pop_back();
+  return _wcsicmp(left.c_str(), right.c_str()) == 0;
+}
+
+static bool SelectionHasDriveRoot(const UStringVector &paths)
+{
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    if (IsDriveRootPath(paths[i]))
+      return true;
+  }
+  return false;
+}
+
+static bool WideSelectionIsNested(const std::vector<std::wstring> &paths)
+{
+  for (size_t i = 0; i < paths.size(); i++)
+  {
+    std::wstring prefix = paths[i];
+    while (!prefix.empty() && (prefix.back() == L'\\' || prefix.back() == L'/'))
+      prefix.pop_back();
+    prefix += L'\\';
+    for (size_t j = 0; j < paths.size(); j++)
+    {
+      if (i != j && _wcsnicmp(paths[j].c_str(), prefix.c_str(), prefix.size()) == 0)
+        return true;
+    }
+  }
+  return false;
+}
+
+static std::wstring TrimWide(std::wstring text)
+{
+  while (!text.empty() && iswspace(text.front()))
+    text.erase(text.begin());
+  while (!text.empty() && iswspace(text.back()))
+    text.pop_back();
+  return text;
+}
+
+static bool IsLegalFolderNameWide(const std::wstring &name)
+{
+  if (name.empty() || name == L"." || name == L"..")
+    return false;
+  if (name.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos)
+    return false;
+  if (name.back() == L'.' || name.back() == L' ')
+    return false;
+  return true;
+}
+
+static const wchar_t *FilesToFolderTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"文件归入文件夹";
+  return L"Move files into a folder";
+}
+
+static const wchar_t *UnwrapFolderTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"去掉外层文件夹";
+  return L"Remove enclosing folder";
+}
+
+struct NzFolderNameState
+{
+  std::wstring Text;
+  bool Accepted;
+  bool Done;
+  HWND Edit;
+  HFONT Font;
+  HICON IconSmall;
+  HICON IconBig;
+};
+
+static LRESULT CALLBACK NzFolderNameProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+  NzFolderNameState *state = (NzFolderNameState *)::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+  if (msg == NanaZip::DialogAppearance::ActivateMessage)
+  {
+    NanaZip::DialogAppearance::Activate(hwnd, ::GetDlgItem(hwnd, 100));
+    return 0;
+  }
+  switch (msg)
+  {
+  case WM_NCCREATE:
+  {
+    const CREATESTRUCTW *cs = (const CREATESTRUCTW *)lp;
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
+    return TRUE;
+  }
+  case WM_CREATE:
+    state = (NzFolderNameState *)::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    ::CreateWindowExW(0, L"STATIC", L"输入文件夹名",
+      WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX,
+      16, 16, 320, 20, hwnd, (HMENU)101, NULL, NULL);
+    state->Edit = ::CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
+      WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+      16, 42, 320, 24, hwnd, (HMENU)100, NULL, NULL);
+    ::CreateWindowExW(0, L"BUTTON", L"确定",
+      WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+      176, 80, 76, 28, hwnd, (HMENU)1, NULL, NULL);
+    ::CreateWindowExW(0, L"BUTTON", L"取消",
+      WS_CHILD | WS_VISIBLE | WS_TABSTOP,
+      260, 80, 76, 28, hwnd, (HMENU)2, NULL, NULL);
+    NanaZip::DialogAppearance::ApplyFolderPrompt(hwnd, ::GetDpiForWindow(hwnd),
+      state->Font, state->IconSmall, state->IconBig);
+    return 0;
+  case WM_DPICHANGED:
+  {
+    NanaZip::DialogAppearance::ApplyFolderPrompt(hwnd, HIWORD(wp),
+      state->Font, state->IconSmall, state->IconBig);
+    const RECT *rectangle = (const RECT *)lp;
+    ::SetWindowPos(hwnd, NULL, rectangle->left, rectangle->top, 0, 0,
+      SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    return 0;
+  }
+  case WM_COMMAND:
+    if (!state)
+      break;
+    if (LOWORD(wp) == 1)
+    {
+      wchar_t buffer[260] = {};
+      ::GetWindowTextW(state->Edit, buffer, 260);
+      state->Text = TrimWide(buffer);
+      state->Accepted = true;
+      state->Done = true;
+      ::DestroyWindow(hwnd);
+      return 0;
+    }
+    if (LOWORD(wp) == 2)
+    {
+      state->Accepted = false;
+      state->Done = true;
+      ::DestroyWindow(hwnd);
+      return 0;
+    }
+    break;
+  case WM_CLOSE:
+    if (state)
+    {
+      state->Accepted = false;
+      state->Done = true;
+    }
+    ::DestroyWindow(hwnd);
+    return 0;
+  case WM_DESTROY:
+    ::DeleteObject(state->Font);
+    ::DestroyIcon(state->IconSmall);
+    ::DestroyIcon(state->IconBig);
+    return 0;
+  default:
+    break;
+  }
+  return ::DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static bool AskFolderNameWide(std::wstring &name)
+{
+  NanaZip::DialogAppearance::ModalWindowScope Modal;
+  NanaZip::DialogAppearance::DialogScope Appearance;
+  static bool registered = false;
+  const wchar_t *className = L"NanaZipClassicFolderNameWnd";
+  if (!registered)
+  {
+    WNDCLASSW wc;
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = NzFolderNameProc;
+    wc.hInstance = ::GetModuleHandleW(NULL);
+    wc.hCursor = ::LoadCursorW(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+    wc.lpszClassName = className;
+    registered = ::RegisterClassW(&wc) != 0 || ::GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+  }
+  if (!registered)
+    return false;
+  NzFolderNameState state = {};
+  RECT rect = { 0, 0, 360, 128 };
+  const DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
+  ::AdjustWindowRectEx(&rect, style, FALSE, WS_EX_DLGMODALFRAME);
+  const int width = rect.right - rect.left;
+  const int height = rect.bottom - rect.top;
+  HWND hwnd = ::CreateWindowExW(
+    WS_EX_DLGMODALFRAME, className, L"文件归入文件夹", style,
+    (::GetSystemMetrics(SM_CXSCREEN) - width) / 2,
+    (::GetSystemMetrics(SM_CYSCREEN) - height) / 2,
+    width, height, Modal.Owner(), NULL, ::GetModuleHandleW(NULL), &state);
+  if (!hwnd)
+    return false;
+  Modal.Show(hwnd);
+  MSG msg;
+  while (!state.Done && ::GetMessageW(&msg, NULL, 0, 0) > 0)
+  {
+    if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE)
+    {
+      state.Accepted = false;
+      state.Done = true;
+      ::DestroyWindow(hwnd);
+      continue;
+    }
+    if (msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN)
+    {
+      ::SendMessageW(hwnd, WM_COMMAND, 1, 0);
+      continue;
+    }
+    ::TranslateMessage(&msg);
+    ::DispatchMessageW(&msg);
+  }
+  if (!state.Accepted)
+    return false;
+  name = state.Text;
+  return true;
+}
+
+static void ShowMoveNotice(const wchar_t *title, const std::wstring &message)
+{
+  if (!message.empty())
+    ::MessageBoxW(NanaZip::DialogAppearance::ForegroundOwner(), message.c_str(), title, MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+}
+
+static std::wstring SkippedMessageWide(const wchar_t *lead, const std::vector<std::wstring> &skipped)
+{
+  std::wstring message = lead;
+  const size_t limit = skipped.size() < 12 ? skipped.size() : 12;
+  for (size_t i = 0; i < limit; i++)
+  {
+    message += L"\r\n";
+    message += skipped[i];
+  }
+  if (skipped.size() > limit)
+    message += L"\r\n...";
+  return message;
+}
+
+static void MoveFilesIntoFolder(const UStringVector &fileNames)
+{
+  const std::vector<std::wstring> files = ToWidePaths(fileNames);
+  if (!SelectionIsOnlyFiles(fileNames) || !WidePathsShareParent(files))
+  {
+    ShowMoveNotice(FilesToFolderTitle(), L"这些文件不在同一个文件夹里，没有移动。");
+    return;
+  }
+  std::wstring folderName;
+  if (files.size() == 1)
+    folderName = NameWithoutLastExtWide(BaseNameWide(files[0]));
+  else if (!AskFolderNameWide(folderName))
+    return;
+  folderName = TrimWide(folderName);
+  if (!IsLegalFolderNameWide(folderName))
+  {
+    ShowMoveNotice(FilesToFolderTitle(), L"文件夹名不能包含 \\ / : * ? \" < > | 。");
+    return;
+  }
+  const std::wstring parent = ParentDirOfWide(files[0]);
+  const std::wstring destDir = JoinWide(parent, folderName);
+  if (WidePathExists(destDir) && !WideIsDirectory(destDir))
+  {
+    ShowMoveNotice(FilesToFolderTitle(), L"已有同名文件，没有创建文件夹。");
+    return;
+  }
+  const bool created = !WidePathExists(destDir);
+  if (created && !::CreateDirectoryW(destDir.c_str(), NULL))
+  {
+    ShowMoveNotice(FilesToFolderTitle(), L"文件夹没有创建成功。");
+    return;
+  }
+  std::vector<std::wstring> skipped;
+  for (size_t i = 0; i < files.size(); i++)
+  {
+    const std::wstring dest = JoinWide(destDir, BaseNameWide(files[i]));
+    if (WidePathExists(dest) || !::MoveFileW(files[i].c_str(), dest.c_str()))
+      skipped.push_back(BaseNameWide(files[i]));
+  }
+  if (created && skipped.size() == files.size())
+    ::RemoveDirectoryW(destDir.c_str());
+  if (!skipped.empty())
+    ShowMoveNotice(FilesToFolderTitle(), SkippedMessageWide(L"以下文件没有移动，避免覆盖：", skipped));
+}
+
+static void RemoveEnclosingFolders(const UStringVector &folderNames)
+{
+  const std::vector<std::wstring> folders = ToWidePaths(folderNames);
+  if (!SelectionIsOnlyFolders(folderNames) || SelectionHasDriveRoot(folderNames))
+    return;
+  if (WideSelectionIsNested(folders))
+  {
+    ShowMoveNotice(UnwrapFolderTitle(), L"选中的文件夹套在一起，没有移动任何文件。");
+    return;
+  }
+  std::vector<std::wstring> skipped;
+  for (size_t i = 0; i < folders.size(); i++)
+  {
+    const std::wstring parent = ParentDirOfWide(folders[i]);
+    if (parent.empty())
+      continue;
+    std::vector<std::wstring> children;
+    WIN32_FIND_DATAW data;
+    memset(&data, 0, sizeof(data));
+    const HANDLE find = ::FindFirstFileW(JoinWide(folders[i], L"*").c_str(), &data);
+    if (find != INVALID_HANDLE_VALUE)
+    {
+      do
+      {
+        if (wcscmp(data.cFileName, L".") == 0 || wcscmp(data.cFileName, L"..") == 0)
+          continue;
+        children.push_back(JoinWide(folders[i], data.cFileName));
+      } while (::FindNextFileW(find, &data));
+      ::FindClose(find);
+    }
+    bool allMoved = true;
+    for (size_t c = 0; c < children.size(); c++)
+    {
+      const std::wstring dest = JoinWide(parent, BaseNameWide(children[c]));
+      if (WidePathExists(dest) || !::MoveFileW(children[c].c_str(), dest.c_str()))
+      {
+        allMoved = false;
+        skipped.push_back(BaseNameWide(children[c]));
+      }
+    }
+    if (allMoved)
+      ::RemoveDirectoryW(folders[i].c_str());
+  }
+  if (!skipped.empty())
+    ShowMoveNotice(UnwrapFolderTitle(), SkippedMessageWide(L"以下内容没有移动，避免覆盖：", skipped));
+}
+
+static bool TextHasSpace(const UString &s)
+{
+  for (unsigned i = 0; i < s.Len(); i++)
+    if (s[i] == L' ')
+      return true;
+  return false;
+}
+
+static UString QuoteIfHasSpace(const UString &s)
+{
+  if (!TextHasSpace(s))
+    return s;
+  UString q;
+  q += L'"';
+  q += s;
+  q += L'"';
+  return q;
+}
+
+static UString BaseNameOf(const UString &path)
+{
+  const int slash = path.ReverseFind_PathSepar();
+  if (slash < 0)
+    return path;
+  return path.Ptr((unsigned)slash + 1);
+}
+
+static UString NameWithoutLastExt(const UString &name)
+{
+  const int dot = name.ReverseFind_Dot();
+  if (dot <= 0)
+    return name;
+  return name.Left((unsigned)dot);
+}
+
+static bool CopyUnicodeTextToClipboard(const UString &text)
+{
+  if (text.IsEmpty())
+    return false;
+  const SIZE_T bytes = ((SIZE_T)text.Len() + 1) * sizeof(wchar_t);
+  HGLOBAL mem = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+  if (!mem)
+    return false;
+  void *dest = ::GlobalLock(mem);
+  if (!dest)
+  {
+    ::GlobalFree(mem);
+    return false;
+  }
+  ::CopyMemory(dest, text.Ptr(), bytes);
+  ::GlobalUnlock(mem);
+  bool opened = false;
+  for (int attempt = 0; attempt < 8; attempt++)
+  {
+    if (::OpenClipboard(NULL))
+    {
+      opened = true;
+      break;
+    }
+    ::Sleep(15);
+  }
+  if (!opened)
+  {
+    ::GlobalFree(mem);
+    return false;
+  }
+  if (!::EmptyClipboard())
+  {
+    ::CloseClipboard();
+    ::GlobalFree(mem);
+    return false;
+  }
+  if (!::SetClipboardData(CF_UNICODETEXT, mem))
+  {
+    ::CloseClipboard();
+    ::GlobalFree(mem);
+    return false;
+  }
+  ::CloseClipboard();
+  return true;
+}
+
+static void CopySelectedFileText(const UStringVector &paths, int kind)
+{
+  UString text;
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    UString line = paths[i];
+    if (kind != 0)
+    {
+      line = BaseNameOf(line);
+      if (kind == 2)
+        line = NameWithoutLastExt(line);
+    }
+    if (!text.IsEmpty())
+      text += L"\r\n";
+    text += QuoteIfHasSpace(line);
+  }
+  CopyUnicodeTextToClipboard(text);
+}
+
+static const wchar_t *NewFolderDateTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"以日期新建文件夹";
+  return L"New folder by date";
+}
+
+static const wchar_t *NewFolderBatchTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"批量新建文件夹";
+  return L"Batch new folders";
+}
+
+static bool NzPathExists(const wchar_t *path)
+{
+  return path && path[0] && ::GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES;
+}
+
+static bool NzIsDirectory(const wchar_t *path)
+{
+  if (!path || !path[0])
+    return false;
+  const DWORD attr = ::GetFileAttributesW(path);
+  return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+}
+
+static std::wstring NzJoin(const wchar_t *dir, const std::wstring &name)
+{
+  std::wstring result = dir ? dir : L"";
+  if (!result.empty() && result.back() != L'\\' && result.back() != L'/')
+    result += L'\\';
+  result += name;
+  return result;
+}
+
+static void CreateDateFolder(const wchar_t *dir)
+{
+  if (!NzIsDirectory(dir))
+    return;
+  SYSTEMTIME st;
+  memset(&st, 0, sizeof(st));
+  ::GetLocalTime(&st);
+  wchar_t base[32];
+  swprintf_s(base, L"%04u_%02u%02u", st.wYear, st.wMonth, st.wDay);
+  std::wstring path = NzJoin(dir, base);
+  if (!NzPathExists(path.c_str()))
+  {
+    ::CreateDirectoryW(path.c_str(), NULL);
+    return;
+  }
+  for (int i = 2; i < 10000; i++)
+  {
+    path = NzJoin(dir, std::wstring(base) + L"_" + std::to_wstring(i));
+    if (!NzPathExists(path.c_str()))
+    {
+      ::CreateDirectoryW(path.c_str(), NULL);
+      return;
+    }
+  }
+}
+
+struct NzBatchDialogState
+{
+  HWND Edit;
+  HWND IconWnd;
+  HWND TitleWnd;
+  HWND HintWnd;
+  HWND HintWnd2;
+  HWND OkWnd;
+  HWND CancelWnd;
+  HFONT Font;
+  HFONT HintFont;
+  HFONT TitleFont;
+  HICON IconHeader;
+  HICON IconBig;
+  HICON IconSmall;
+  COLORREF Accent;
+  int Dpi;
+  bool Accepted;
+  bool Done;
+  std::wstring Text;
+  NzBatchDialogState()
+    : Edit(NULL), IconWnd(NULL), TitleWnd(NULL), HintWnd(NULL), HintWnd2(NULL),
+      OkWnd(NULL), CancelWnd(NULL), Font(NULL), HintFont(NULL), TitleFont(NULL),
+      IconHeader(NULL), IconBig(NULL), IconSmall(NULL),
+      Accent(RGB(0, 103, 192)), Dpi(96), Accepted(false), Done(false) {}
+};
+
+static int NzScale(int value, int dpi)
+{
+  return MulDiv(value, dpi, 96);
+}
+
+static HBRUSH NzLightBrush()
+{
+  static HBRUSH brush = CreateSolidBrush(RGB(243, 243, 243));
+  return brush;
+}
+
+static HBRUSH NzWhiteBrush()
+{
+  static HBRUSH brush = CreateSolidBrush(RGB(255, 255, 255));
+  return brush;
+}
+
+static COLORREF NzAccent()
+{
+  DWORD value = 0;
+  DWORD size = sizeof(value);
+  if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\DWM",
+      L"AccentColor", RRF_RT_REG_DWORD, NULL, &value, &size) == ERROR_SUCCESS)
+    return RGB(value & 0xFF, (value >> 8) & 0xFF, (value >> 16) & 0xFF);
+  return RGB(0, 103, 192);
+}
+
+static COLORREF NzShade(COLORREF color, int delta)
+{
+  int r = GetRValue(color) + delta;
+  int g = GetGValue(color) + delta;
+  int b = GetBValue(color) + delta;
+  if (r < 0) r = 0;
+  if (g < 0) g = 0;
+  if (b < 0) b = 0;
+  if (r > 255) r = 255;
+  if (g > 255) g = 255;
+  if (b > 255) b = 255;
+  return RGB(r, g, b);
+}
+
+static HFONT NzUiFont(int dpi, int pixel, int weight)
+{
+  UNREFERENCED_PARAMETER(pixel);
+  return NanaZip::DialogAppearance::CreateFont(dpi, weight);
+}
+
+static HICON NzLoadIcon(int cx, int cy)
+{
+  wchar_t path[MAX_PATH];
+  HMODULE module = NULL;
+  if (GetModuleHandleExW(
+          GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+          GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+          (LPCWSTR)&NzLoadIcon, &module) &&
+      GetModuleFileNameW(module, path, MAX_PATH))
+  {
+    wchar_t *slash = wcsrchr(path, L'\\');
+    if (slash)
+    {
+      wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"NanaZip.ico");
+      HICON icon = (HICON)LoadImageW(NULL, path, IMAGE_ICON, cx, cy, LR_LOADFROMFILE);
+      if (icon)
+        return icon;
+    }
+  }
+  return (HICON)LoadImageW(NULL, L"C:\\Program Files\\NanaZip\\NanaZip.ico",
+      IMAGE_ICON, cx, cy, LR_LOADFROMFILE);
+}
+
+static void NzDrawButton(const DRAWITEMSTRUCT *draw, bool primary, COLORREF accent, HFONT font, int dpi)
+{
+  RECT rc = draw->rcItem;
+  bool pressed = (draw->itemState & ODS_SELECTED) != 0;
+  COLORREF fill = primary ? (pressed ? NzShade(accent, -28) : accent) : (pressed ? RGB(232, 232, 232) : RGB(255, 255, 255));
+  COLORREF text = primary ? RGB(255, 255, 255) : RGB(26, 26, 26);
+  COLORREF border = primary ? fill : RGB(208, 208, 208);
+  HBRUSH brush = CreateSolidBrush(fill);
+  HPEN pen = CreatePen(PS_SOLID, 1, border);
+  HGDIOBJ oldBrush = SelectObject(draw->hDC, brush);
+  HGDIOBJ oldPen = SelectObject(draw->hDC, pen);
+  int radius = NzScale(6, dpi);
+  RoundRect(draw->hDC, rc.left, rc.top, rc.right, rc.bottom, radius, radius);
+  SelectObject(draw->hDC, oldPen);
+  SelectObject(draw->hDC, oldBrush);
+  DeleteObject(pen);
+  DeleteObject(brush);
+  wchar_t label[32];
+  label[0] = 0;
+  GetWindowTextW(draw->hwndItem, label, 32);
+  SetBkMode(draw->hDC, TRANSPARENT);
+  SetTextColor(draw->hDC, text);
+  HGDIOBJ oldFont = SelectObject(draw->hDC, font);
+  DrawTextW(draw->hDC, label, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+  SelectObject(draw->hDC, oldFont);
+}
+
+static void NzLayoutBatch(HWND hwnd, NzBatchDialogState *state)
+{
+  RECT rc;
+  GetClientRect(hwnd, &rc);
+  int dpi = state->Dpi > 0 ? state->Dpi : 96;
+  int margin = NzScale(24, dpi);
+  int icon = NzScale(32, dpi);
+  MoveWindow(state->IconWnd, margin, margin, icon, icon, TRUE);
+  MoveWindow(state->TitleWnd, margin + icon + NzScale(12, dpi), margin,
+      rc.right - margin * 2 - icon - NzScale(12, dpi), icon, TRUE);
+  int hintY = margin + icon + NzScale(8, dpi);
+  int lineH = NzScale(18, dpi);
+  int hintH = lineH * 2;
+  MoveWindow(state->HintWnd, margin, hintY, rc.right - margin * 2, lineH, TRUE);
+  MoveWindow(state->HintWnd2, margin, hintY + lineH, rc.right - margin * 2, lineH, TRUE);
+  int buttonW = NzScale(112, dpi);
+  int buttonH = NzScale(36, dpi);
+  int buttonY = rc.bottom - margin - buttonH;
+  MoveWindow(state->CancelWnd, rc.right - margin - buttonW, buttonY, buttonW, buttonH, TRUE);
+  MoveWindow(state->OkWnd, rc.right - margin - buttonW * 2 - NzScale(12, dpi), buttonY, buttonW, buttonH, TRUE);
+  int editY = hintY + hintH + NzScale(12, dpi);
+  int editH = buttonY - NzScale(16, dpi) - editY;
+  if (editH < NzScale(160, dpi))
+    editH = NzScale(160, dpi);
+  int border = NzScale(1, dpi);
+  MoveWindow(state->Edit, margin + border, editY + border,
+      rc.right - margin * 2 - border * 2, editH - border * 2, TRUE);
+  int pad = NzScale(10, dpi);
+  SendMessageW(state->Edit, EM_SETMARGINS, EC_LEFTMARGIN | EC_RIGHTMARGIN, MAKELONG(pad, pad));
+}
+
+static void NzApplyChrome(HWND hwnd, NzBatchDialogState *state, int dpi)
+{
+  state->Dpi = dpi;
+  state->Accent = NzAccent();
+  HFONT oldFont = state->Font;
+  HFONT oldTitle = state->TitleFont;
+  state->Font = NzUiFont(dpi, 14, FW_NORMAL);
+  HFONT oldHint = state->HintFont;
+  state->HintFont = NzUiFont(dpi, 12, FW_NORMAL);
+  state->TitleFont = NzUiFont(dpi, 18, FW_SEMIBOLD);
+  SendMessageW(state->TitleWnd, WM_SETFONT, (WPARAM)state->TitleFont, TRUE);
+  SendMessageW(state->HintWnd, WM_SETFONT, (WPARAM)state->HintFont, TRUE);
+  if (state->HintWnd2)
+    SendMessageW(state->HintWnd2, WM_SETFONT, (WPARAM)state->HintFont, TRUE);
+  SendMessageW(state->Edit, WM_SETFONT, (WPARAM)state->Font, TRUE);
+  SendMessageW(state->OkWnd, WM_SETFONT, (WPARAM)state->Font, TRUE);
+  SendMessageW(state->CancelWnd, WM_SETFONT, (WPARAM)state->Font, TRUE);
+  if (oldFont)
+    DeleteObject(oldFont);
+  if (oldHint)
+    DeleteObject(oldHint);
+  if (oldTitle)
+    DeleteObject(oldTitle);
+  HICON oldHeader = state->IconHeader;
+  HICON oldBig = state->IconBig;
+  HICON oldSmallIcon = state->IconSmall;
+  state->IconHeader = NzLoadIcon(NzScale(32, dpi), NzScale(32, dpi));
+  state->IconBig = NzLoadIcon(NzScale(32, dpi), NzScale(32, dpi));
+  state->IconSmall = NzLoadIcon(NzScale(16, dpi), NzScale(16, dpi));
+  SetWindowTextW(hwnd, L"批量新建文件夹");
+  if (state->IconBig)
+    SendMessageW(hwnd, WM_SETICON, ICON_BIG, (LPARAM)state->IconBig);
+  if (state->IconSmall)
+    SendMessageW(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)state->IconSmall);
+  if (state->IconWnd)
+    InvalidateRect(state->IconWnd, NULL, TRUE);
+  if (oldHeader)
+    DestroyIcon(oldHeader);
+  if (oldBig)
+    DestroyIcon(oldBig);
+  if (oldSmallIcon)
+    DestroyIcon(oldSmallIcon);
+}
+
+static LRESULT CALLBACK NzBatchDialogProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+  NzBatchDialogState *state = (NzBatchDialogState *)::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+  if (msg == NanaZip::DialogAppearance::ActivateMessage)
+  {
+    NanaZip::DialogAppearance::Activate(hwnd, ::GetDlgItem(hwnd, 100));
+    return 0;
+  }
+  switch (msg)
+  {
+  case WM_NCCREATE:
+  {
+    CREATESTRUCTW *cs = (CREATESTRUCTW *)lp;
+    ::SetWindowLongPtrW(hwnd, GWLP_USERDATA, (LONG_PTR)cs->lpCreateParams);
+    return TRUE;
+  }
+  case WM_CREATE:
+  {
+    state = (NzBatchDialogState *)::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
+    state->IconWnd = ::CreateWindowExW(0, L"STATIC", L"",
+        WS_CHILD | WS_VISIBLE | SS_OWNERDRAW, 0, 0, 10, 10, hwnd, (HMENU)101, ::GetModuleHandleW(NULL), NULL);
+    state->TitleWnd = ::CreateWindowExW(0, L"STATIC", L"批量新建文件夹",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_CENTERIMAGE | SS_NOPREFIX, 0, 0, 10, 10, hwnd, (HMENU)102, ::GetModuleHandleW(NULL), NULL);
+    state->HintWnd = ::CreateWindowExW(0, L"STATIC", L"一行一个文件夹名，可以直接输入或粘贴。",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, hwnd, (HMENU)103, ::GetModuleHandleW(NULL), NULL);
+    state->HintWnd2 = ::CreateWindowExW(0, L"STATIC", L"Ctrl+回车创建。",
+        WS_CHILD | WS_VISIBLE | SS_LEFT | SS_NOPREFIX, 0, 0, 10, 10, hwnd, (HMENU)104, ::GetModuleHandleW(NULL), NULL);
+    state->Edit = ::CreateWindowExW(0, L"EDIT", L"",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN,
+        0, 0, 10, 10, hwnd, (HMENU)100, ::GetModuleHandleW(NULL), NULL);
+    state->OkWnd = ::CreateWindowExW(0, L"BUTTON", L"确定",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 10, 10, hwnd, (HMENU)1, ::GetModuleHandleW(NULL), NULL);
+    state->CancelWnd = ::CreateWindowExW(0, L"BUTTON", L"取消",
+        WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_OWNERDRAW, 0, 0, 10, 10, hwnd, (HMENU)2, ::GetModuleHandleW(NULL), NULL);
+    int dpi = state->Dpi > 0 ? state->Dpi : 96;
+    typedef UINT (WINAPI *GetDpiFn)(HWND);
+    GetDpiFn getDpi = (GetDpiFn)::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
+    if (getDpi)
+    {
+      UINT windowDpi = getDpi(hwnd);
+      if (windowDpi > 0)
+        dpi = (int)windowDpi;
+    }
+    NzApplyChrome(hwnd, state, dpi);
+    NzLayoutBatch(hwnd, state);
+    return 0;
+  }
+  case WM_SIZE:
+    if (state)
+      NzLayoutBatch(hwnd, state);
+    return 0;
+  case WM_ERASEBKGND:
+  {
+    RECT rc;
+    ::GetClientRect(hwnd, &rc);
+    ::FillRect((HDC)wp, &rc, NzLightBrush());
+    return 1;
+  }
+  case WM_PAINT:
+  {
+    PAINTSTRUCT ps;
+    HDC dc = ::BeginPaint(hwnd, &ps);
+    if (state && state->Edit)
+    {
+      RECT rc;
+      ::GetWindowRect(state->Edit, &rc);
+      ::MapWindowPoints(HWND_DESKTOP, hwnd, (POINT *)&rc, 2);
+      int border = NzScale(1, state->Dpi > 0 ? state->Dpi : 96);
+      ::InflateRect(&rc, border, border);
+      HBRUSH frame = ::CreateSolidBrush(RGB(208, 208, 208));
+      ::FrameRect(dc, &rc, frame);
+      ::DeleteObject(frame);
+    }
+    ::EndPaint(hwnd, &ps);
+    return 0;
+  }
+  case WM_DRAWITEM:
+  {
+    const DRAWITEMSTRUCT *draw = (const DRAWITEMSTRUCT *)lp;
+    if (!state || !draw)
+      break;
+    if (draw->hwndItem == state->IconWnd && state->IconHeader)
+    {
+      int width = draw->rcItem.right - draw->rcItem.left;
+      int height = draw->rcItem.bottom - draw->rcItem.top;
+      ::FillRect(draw->hDC, &draw->rcItem, NzLightBrush());
+      ::DrawIconEx(draw->hDC, 0, 0, state->IconHeader, width, height, 0, NULL, DI_NORMAL);
+      return TRUE;
+    }
+    if (draw->hwndItem == state->OkWnd || draw->hwndItem == state->CancelWnd)
+    {
+      NzDrawButton(draw, draw->hwndItem == state->OkWnd, state->Accent, state->Font, state->Dpi);
+      return TRUE;
+    }
+    break;
+  }
+  case WM_CTLCOLORSTATIC:
+  {
+    HDC dc = (HDC)wp;
+    ::SetBkMode(dc, TRANSPARENT);
+    if (state && ((HWND)lp == state->HintWnd || (HWND)lp == state->HintWnd2))
+      ::SetTextColor(dc, RGB(96, 96, 96));
+    else
+      ::SetTextColor(dc, RGB(26, 26, 26));
+    return (LRESULT)NzLightBrush();
+  }
+  case WM_CTLCOLOREDIT:
+  {
+    HDC dc = (HDC)wp;
+    ::SetBkColor(dc, RGB(255, 255, 255));
+    ::SetTextColor(dc, RGB(26, 26, 26));
+    return (LRESULT)NzWhiteBrush();
+  }
+  case WM_COMMAND:
+    if (!state)
+      return 0;
+    if (LOWORD(wp) == 1)
+    {
+      int len = ::GetWindowTextLengthW(state->Edit);
+      state->Text.assign((size_t)len, L'\0');
+      if (len > 0)
+        ::GetWindowTextW(state->Edit, &state->Text[0], len + 1);
+      state->Accepted = true;
+      state->Done = true;
+      ::DestroyWindow(hwnd);
+    }
+    else if (LOWORD(wp) == 2)
+    {
+      state->Accepted = false;
+      state->Done = true;
+      ::DestroyWindow(hwnd);
+    }
+    return 0;
+  case WM_CLOSE:
+    if (state)
+    {
+      state->Accepted = false;
+      state->Done = true;
+    }
+    ::DestroyWindow(hwnd);
+    return 0;
+  case WM_DESTROY:
+    if (state)
+    {
+      if (state->Font)
+        ::DeleteObject(state->Font);
+      if (state->HintFont)
+        ::DeleteObject(state->HintFont);
+      if (state->TitleFont)
+        ::DeleteObject(state->TitleFont);
+      if (state->IconHeader)
+        ::DestroyIcon(state->IconHeader);
+      if (state->IconBig)
+        ::DestroyIcon(state->IconBig);
+      if (state->IconSmall)
+        ::DestroyIcon(state->IconSmall);
+      state->Font = NULL;
+      state->HintFont = NULL;
+      state->TitleFont = NULL;
+      state->IconHeader = NULL;
+      state->IconBig = NULL;
+      state->IconSmall = NULL;
+    }
+    return 0;
+  }
+  return ::DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static bool ShowBatchFolderDialog(std::wstring &text)
+{
+  NanaZip::DialogAppearance::ModalWindowScope Modal;
+  NanaZip::DialogAppearance::DialogScope Appearance;
+  static bool registered = false;
+  const wchar_t *className = L"NanaZipBatchNewFolderWnd";
+  if (!registered)
+  {
+    WNDCLASSW wc;
+    memset(&wc, 0, sizeof(wc));
+    wc.lpfnWndProc = NzBatchDialogProc;
+    wc.hInstance = ::GetModuleHandleW(NULL);
+    wc.hCursor = ::LoadCursorW(NULL, IDC_ARROW);
+    wc.hbrBackground = NzLightBrush();
+    wc.lpszClassName = className;
+    registered = ::RegisterClassW(&wc) != 0 || ::GetLastError() == ERROR_CLASS_ALREADY_EXISTS;
+  }
+  if (!registered)
+    return false;
+  typedef HANDLE (WINAPI *SetDpiFn)(HANDLE);
+  SetDpiFn setDpi = (SetDpiFn)::GetProcAddress(::GetModuleHandleW(L"user32.dll"), "SetThreadDpiAwarenessContext");
+  HANDLE oldContext = NULL;
+  if (setDpi)
+    oldContext = setDpi((HANDLE)(INT_PTR)-4);
+  NzBatchDialogState state;
+  HDC screen = ::GetDC(NULL);
+  int dpi = screen ? ::GetDeviceCaps(screen, LOGPIXELSX) : 96;
+  if (screen)
+    ::ReleaseDC(NULL, screen);
+  if (dpi <= 0)
+    dpi = 96;
+  state.Dpi = dpi;
+  RECT rect = { 0, 0, NzScale(680, dpi), NzScale(460, dpi) };
+  ::AdjustWindowRectEx(&rect, WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU, FALSE, WS_EX_DLGMODALFRAME);
+  const int width = rect.right - rect.left;
+  const int height = rect.bottom - rect.top;
+  const int x = (::GetSystemMetrics(SM_CXSCREEN) - width) / 2;
+  const int y = (::GetSystemMetrics(SM_CYSCREEN) - height) / 2;
+  HWND hwnd = ::CreateWindowExW(
+      WS_EX_DLGMODALFRAME, className, L"批量新建文件夹",
+      WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_VISIBLE | WS_CLIPCHILDREN,
+      x, y, width, height, Modal.Owner(), NULL, ::GetModuleHandleW(NULL), &state);
+  if (setDpi && oldContext)
+    setDpi(oldContext);
+  if (!hwnd)
+    return false;
+  Modal.Show(hwnd);
+  MSG msg;
+  while (!state.Done && ::GetMessageW(&msg, NULL, 0, 0) > 0)
+  {
+    if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE)
+    {
+      state.Accepted = false;
+      state.Done = true;
+      ::DestroyWindow(hwnd);
+      continue;
+    }
+    if (msg.message == WM_KEYDOWN && msg.wParam == VK_RETURN &&
+        (::GetKeyState(VK_CONTROL) & 0x8000))
+    {
+      ::PostMessageW(hwnd, WM_COMMAND, 1, 0);
+      continue;
+    }
+    ::TranslateMessage(&msg);
+    ::DispatchMessageW(&msg);
+  }
+  if (!state.Accepted)
+    return false;
+  text = state.Text;
+  return true;
+}
+
+static std::wstring NzTrim(const std::wstring &text)
+{
+  size_t begin = 0;
+  size_t end = text.size();
+  while (begin < end && (text[begin] == L' ' || text[begin] == L'\t' || text[begin] == L'\r'))
+    begin++;
+  while (end > begin && (text[end - 1] == L' ' || text[end - 1] == L'\t' || text[end - 1] == L'\r'))
+    end--;
+  return text.substr(begin, end - begin);
+}
+
+static bool NzIllegalName(const std::wstring &name)
+{
+  if (name.empty() || name == L"." || name == L"..")
+    return true;
+  return name.find_first_of(L"\\/:*?\"<>|") != std::wstring::npos;
+}
+
+static void CreateBatchFolders(const wchar_t *dir)
+{
+  if (!NzIsDirectory(dir))
+    return;
+  std::wstring text;
+  if (!ShowBatchFolderDialog(text))
+    return;
+  std::wstring skipped;
+  int skippedCount = 0;
+  size_t pos = 0;
+  while (pos <= text.size())
+  {
+    size_t next = text.find(L'\n', pos);
+    std::wstring raw = text.substr(pos, next == std::wstring::npos ? std::wstring::npos : next - pos);
+    pos = next == std::wstring::npos ? text.size() + 1 : next + 1;
+    std::wstring name = NzTrim(raw);
+    if (name.empty())
+      continue;
+    const wchar_t *reason = NULL;
+    std::wstring full = NzJoin(dir, name);
+    if (NzIllegalName(name))
+      reason = L"非法字符";
+    else if (NzPathExists(full.c_str()))
+      reason = L"已存在";
+    else if (!::CreateDirectoryW(full.c_str(), NULL))
+      reason = L"创建失败";
+    if (reason)
+    {
+      if (skippedCount < 30)
+      {
+        skipped += name;
+        skipped += L"（";
+        skipped += reason;
+        skipped += L"）\r\n";
+      }
+      skippedCount++;
+    }
+  }
+  if (skippedCount == 0)
+    return;
+  std::wstring message = L"已跳过：\r\n";
+  message += skipped;
+  if (skippedCount > 30)
+    message += L"……\r\n";
+  ::MessageBoxW(NanaZip::DialogAppearance::ForegroundOwner(), message.c_str(), L"批量新建文件夹", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
 }
 
   
@@ -485,6 +1648,34 @@ static bool DoNeedExtract(const FString &name)
   return !FindExt(kExtractExcludeExtensions, name);
 }
 
+// Real archive types. .exe/.msi installers stay compressible.
+static const char * const kRecognizedArchiveExtensions =
+  " 7z zip zipx rar r00 cab iso tar tgz tbz tbz2 txz"
+  " gz bz2 xz zst lz liz lz4 lz5 lzma lzh lha arj z cpio wim swm xar"
+  " ";
+
+static bool IsRecognizedArchiveName(const FString &name)
+{
+  if (FindExt(kRecognizedArchiveExtensions, name))
+    return true;
+
+  int dotPos = name.ReverseFind_Dot();
+  if (dotPos <= 0)
+    return false;
+
+  AString ext;
+  for (unsigned pos = (unsigned)dotPos + 1; name[pos] != 0; pos++)
+  {
+    wchar_t c = name[pos];
+    if (c >= 0x80)
+      return false;
+    ext += (char)MyCharLower_Ascii((char)c);
+  }
+  if (ext.IsEqualTo_Ascii_NoCase("001"))
+    return IsRecognizedArchiveName(name.Left(dotPos));
+  return false;
+}
+
 // we must use diferent Verbs for Popup subMenu.
 void CZipContextMenu::AddMapItem_ForSubMenu(const char *verb)
 {
@@ -538,7 +1729,7 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
 
   LoadLangOneTime();
   
-  if (_fileNames.Size() == 0)
+  if (_fileNames.Size() == 0 && _dropPath.IsEmpty())
   {
     return MAKE_HRESULT(SEVERITY_SUCCESS, 0, 0);
     // return E_INVALIDARG;
@@ -602,6 +1793,100 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     popupMenu.InsertItem(subIndex++, true, mi);
   }
 
+  UString newFolderTarget;
+  bool showNewFolder = false;
+  bool backgroundOnly = false;
+  if (_fileNames.Size() == 0 && !_dropPath.IsEmpty())
+  {
+    newFolderTarget = _dropPath;
+    showNewFolder = true;
+    backgroundOnly = true;
+  }
+  else if (_fileNames.Size() == 1 && NzIsDirectory(_fileNames[0]))
+  {
+    newFolderTarget = _fileNames[0];
+    showNewFolder = true;
+  }
+
+  if (showNewFolder && currentCommandID + 1 < commandIDLast)
+  {
+    const CZipContextMenu::ECommandInternalID ids[2] = {
+      kNewFolderBatch, kNewFolderDate
+    };
+    const wchar_t *titles[2] = {
+      NewFolderBatchTitle(), NewFolderDateTitle()
+    };
+    const char *verbs[2] = {
+      ".NewFolderBatch", ".NewFolderDate"
+    };
+    for (unsigned i = 0; i < 2; i++)
+    {
+      CCommandMapItem cmi;
+      cmi.CommandInternalID = ids[i];
+      cmi.Verb = kMainVerb;
+      cmi.Verb += verbs[i];
+      cmi.UserString = titles[i];
+      cmi.Folder = newFolderTarget;
+      _commandMap.Add(cmi);
+      MyInsertMenu(popupMenu, subIndex++, currentCommandID++, cmi.UserString, bitmap);
+    }
+    if (!backgroundOnly && !IsDriveRootPath(newFolderTarget) &&
+        currentCommandID < commandIDLast)
+    {
+      CCommandMapItem cmi;
+      cmi.CommandInternalID = kUnwrapFolder;
+      cmi.Verb = kMainVerb;
+      cmi.Verb += ".UnwrapFolder";
+      cmi.UserString = UnwrapFolderTitle();
+      cmi.Folder = newFolderTarget;
+      _commandMap.Add(cmi);
+      MyInsertMenu(popupMenu, subIndex++, currentCommandID++, cmi.UserString, bitmap);
+    }
+    if (!backgroundOnly && popupMenu)
+    {
+      CMenuItem sep;
+      sep.fType = MFT_SEPARATOR;
+      sep.fMask = MIIM_TYPE;
+      popupMenu.InsertItem(subIndex++, true, sep);
+    }
+  }
+  else if (!backgroundOnly && SelectionIsOnlyFolders(_fileNames) &&
+      !SelectionHasDriveRoot(_fileNames) && currentCommandID < commandIDLast)
+  {
+    CCommandMapItem cmi;
+    cmi.CommandInternalID = kUnwrapFolder;
+    cmi.Verb = kMainVerb;
+    cmi.Verb += ".UnwrapFolder";
+    cmi.UserString = UnwrapFolderTitle();
+    _commandMap.Add(cmi);
+    MyInsertMenu(popupMenu, subIndex++, currentCommandID++, cmi.UserString, bitmap);
+    if (popupMenu)
+    {
+      CMenuItem sep;
+      sep.fType = MFT_SEPARATOR;
+      sep.fMask = MIIM_TYPE;
+      popupMenu.InsertItem(subIndex++, true, sep);
+    }
+  }
+
+  if (backgroundOnly)
+  {
+    if (ci.Cascaded.Val)
+    {
+      CMenu menu;
+      menu.Attach(hMenu);
+      menuDestroyer.Disable();
+      MyAddSubMenu(_commandMap, kMainVerb, menu, indexMenu++, currentCommandID++, (UString)"NanaZip",
+          popupMenu, bitmap);
+    }
+    else
+      indexMenu = subIndex;
+    popupMenu.Detach();
+    if (_commandMap.Size() != currentCommandID - commandIDFirst)
+      throw 20190818;
+    return MAKE_HRESULT(SEVERITY_SUCCESS, 0, currentCommandID - commandIDFirst);
+  }
+
   UInt32 contextMenuFlags = ci.Flags;
 
   NFind::CFileInfo fi0;
@@ -644,14 +1929,8 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
   {
     if (!fi0.IsDir() && DoNeedExtract(fi0.Name))
     {
-      // Open
+      // kOpen stays cleared, so the old "Open archive" item is not shown here.
       bool thereIsMainOpenItem = ((contextMenuFlags & NContextMenuFlags::kOpen) != 0);
-      if (thereIsMainOpenItem)
-      {
-        CCommandMapItem cmi;
-        AddCommand(kOpen, mainString, cmi);
-        MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
-      }
       if ((contextMenuFlags & NContextMenuFlags::kOpenAs) != 0
           // && (!thereIsMainOpenItem || !FindExt(kNoOpenAsExtensions, fi0.Name))
           && hMenu // we want to reduce number of menu items below 16
@@ -727,12 +2006,10 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
           specFolder = GetSubFolderNameForExtract(fs2us(fi0.Name));
         specFolder.Add_PathSepar();
 
-        if ((contextMenuFlags & NContextMenuFlags::kExtract) != 0)
+        if ((contextMenuFlags & NContextMenuFlags::kTest) != 0)
         {
-          // Extract
           CCommandMapItem cmi;
-          cmi.Folder = baseFolder + specFolder;
-          AddCommand(kExtract, mainString, cmi);
+          AddCommand(kTest, mainString, cmi);
           MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
         }
 
@@ -744,6 +2021,16 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
           AddCommand(kExtractHere, mainString, cmi);
           MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
         }
+
+        // **************** NanaZip Modification Start ****************
+        if ((contextMenuFlags & NContextMenuFlags::kExtractHereDelete) != 0)
+        {
+          CCommandMapItem cmi;
+          cmi.Folder = baseFolder;
+          AddCommand(kExtractHereDelete, mainString, cmi);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
+        }
+        // **************** NanaZip Modification End ****************
 
         // **************** NanaZip Modification Start ****************
         if ((contextMenuFlags & NContextMenuFlags::kExtractHereSmart) != 0)
@@ -767,36 +2054,50 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
           Set_UserString_in_LastCommand(s);
           MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
         }
-      }
 
-      if ((contextMenuFlags & NContextMenuFlags::kTest) != 0)
-      {
-        // Test
-        CCommandMapItem cmi;
-        AddCommand(kTest, mainString, cmi);
-        MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
+        // **************** NanaZip Modification Start ****************
+        if ((contextMenuFlags & NContextMenuFlags::kExtractToDelete) != 0)
+        {
+          CCommandMapItem cmi;
+          UString s;
+          cmi.Folder = baseFolder + specFolder;
+          AddCommand(kExtractToDelete, s, cmi);
+          MyFormatNew_ReducedName(s, specFolder);
+          Set_UserString_in_LastCommand(s);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
+        }
+
+        if ((contextMenuFlags & NContextMenuFlags::kExtract) != 0)
+        {
+          CCommandMapItem cmi;
+          cmi.Folder = baseFolder + specFolder;
+          AddCommand(kExtract, mainString, cmi);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
+        }
+        // **************** NanaZip Modification End ****************
       }
     }
     
+    bool onlyArchives = (_fileNames.Size() > 0 && !fi0.IsDir() && IsRecognizedArchiveName(fi0.Name));
+    if (onlyArchives)
+    {
+      for (unsigned i = 1; i < _fileNames.Size(); i++)
+      {
+        NFind::CFileInfo fi;
+        if (!fi.Find(us2fs(_fileNames[i])) || fi.IsDir() || !IsRecognizedArchiveName(fi.Name))
+        {
+          onlyArchives = false;
+          break;
+        }
+      }
+    }
+
     const UString arcName = CreateArchiveName(_fileNames, _fileNames.Size() == 1 ? &fi0 : NULL);
 
     UString arcName7z = arcName;
     arcName7z += ".7z";
     UString arcNameZip = arcName;
     arcNameZip += ".zip";
-
-    // Compress
-    if ((contextMenuFlags & NContextMenuFlags::kCompress) != 0)
-    {
-      CCommandMapItem cmi;
-      if (_dropMode)
-        cmi.Folder = _dropPath;
-      else
-        cmi.Folder = fs2us(folderPrefix);
-      cmi.ArcName = arcName;
-      AddCommand(kCompress, mainString, cmi);
-      MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
-    }
 
     #ifdef EMAIL_SUPPORT
     // CompressEmail
@@ -843,7 +2144,8 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     #endif
 
     // CompressToZip
-    if (contextMenuFlags & NContextMenuFlags::kCompressToZip &&
+    if (!onlyArchives &&
+        contextMenuFlags & NContextMenuFlags::kCompressToZip &&
         !arcNameZip.IsEqualTo_NoCase(fs2us(fi0.Name)))
     {
       CCommandMapItem cmi;
@@ -859,6 +2161,26 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
       Set_UserString_in_LastCommand(s);
       MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
     }
+
+    // **************** NanaZip Modification Start ****************
+    if (!onlyArchives &&
+        contextMenuFlags & NContextMenuFlags::kCompressToZipDelete &&
+        !arcNameZip.IsEqualTo_NoCase(fs2us(fi0.Name)))
+    {
+      CCommandMapItem cmi;
+      UString s;
+      if (_dropMode)
+        cmi.Folder = _dropPath;
+      else
+        cmi.Folder = fs2us(folderPrefix);
+      cmi.ArcName = arcNameZip;
+      cmi.ArcType = "zip";
+      AddCommand(kCompressToZipDelete, s, cmi);
+      MyFormatNew_ReducedName(s, arcNameZip);
+      Set_UserString_in_LastCommand(s);
+      MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
+    }
+    // **************** NanaZip Modification End ****************
 
     #ifdef EMAIL_SUPPORT
     // CompressToZipEmail
@@ -989,6 +2311,120 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     }
   }
 
+  if (SelectionIsOnlyFiles(_fileNames) &&
+      WidePathsShareParent(ToWidePaths(_fileNames)) &&
+      currentCommandID < commandIDLast)
+  {
+    if (popupMenu && popupMenu.GetItemCount() > 0)
+    {
+      CMenuItem mi;
+      mi.fType = MFT_SEPARATOR;
+      mi.fMask = MIIM_TYPE;
+      popupMenu.InsertItem((int)popupMenu.GetItemCount(), true, mi);
+    }
+    CCommandMapItem cmi;
+    cmi.CommandInternalID = kFilesToFolder;
+    cmi.Verb = kMainVerb;
+    cmi.Verb += ".FilesToFolder";
+    cmi.UserString = FilesToFolderTitle();
+    _commandMap.Add(cmi);
+    MyInsertMenu(popupMenu, (UINT)popupMenu.GetItemCount(), currentCommandID++, cmi.UserString, bitmap);
+  }
+
+  // Separator, then copy items.
+  {
+    const bool menuHasItems = popupMenu && popupMenu.GetItemCount() > 0;
+    const bool onlyFolders = SelectionIsOnlyFolders(_fileNames);
+    const unsigned copyCount = onlyFolders ? 2u : 3u;
+    const UINT room = copyCount - 1;
+    if (_fileNames.Size() > 0 && menuHasItems
+        && currentCommandID + room < commandIDLast)
+    {
+      if (menuHasItems && popupMenu)
+      {
+        CMenuItem mi;
+        mi.fType = MFT_SEPARATOR;
+        mi.fMask = MIIM_TYPE;
+        popupMenu.InsertItem((int)popupMenu.GetItemCount(), true, mi);
+      }
+
+      const CZipContextMenu::ECommandInternalID copyIds[3] = {
+        kCopyFileAddress, kCopyFileName, kCopyFileNameNoExt
+      };
+      const wchar_t *copyTitles[3] = {
+        onlyFolders ? CopyFolderAddressTitle() : CopyFileAddressTitle(),
+        onlyFolders ? CopyFolderNameTitle() : CopyFileNameTitle(),
+        CopyFileNameNoExtTitle()
+      };
+      const char *copyVerbs[3] = {
+        ".CopyFileAddress", ".CopyFileName", ".CopyFileNameNoExt"
+      };
+      for (unsigned i = 0; i < copyCount; i++)
+      {
+        CCommandMapItem cmi;
+        cmi.CommandInternalID = copyIds[i];
+        cmi.Verb = kMainVerb;
+        cmi.Verb += copyVerbs[i];
+        cmi.UserString = copyTitles[i];
+        _commandMap.Add(cmi);
+        MyInsertMenu(popupMenu, (UINT)popupMenu.GetItemCount(), currentCommandID++, cmi.UserString, bitmap);
+      }
+    }
+
+  }
+
+  // 「新建压缩包...」is the last item, with a separator above it.
+  {
+    bool compressOnlyArchives = (_fileNames.Size() > 0 && !fi0.IsDir() && IsRecognizedArchiveName(fi0.Name));
+    if (compressOnlyArchives)
+    {
+      for (unsigned i = 1; i < _fileNames.Size(); i++)
+      {
+        NFind::CFileInfo fi;
+        if (!fi.Find(us2fs(_fileNames[i])) || fi.IsDir() || !IsRecognizedArchiveName(fi.Name))
+        {
+          compressOnlyArchives = false;
+          break;
+        }
+      }
+    }
+    if (!compressOnlyArchives && (contextMenuFlags & NContextMenuFlags::kCompress) != 0
+        && currentCommandID < commandIDLast)
+    {
+      if (popupMenu && popupMenu.GetItemCount() > 0)
+      {
+        CMenuItem mi;
+        mi.fType = MFT_SEPARATOR;
+        mi.fMask = MIIM_TYPE;
+        popupMenu.InsertItem((int)popupMenu.GetItemCount(), true, mi);
+      }
+      CCommandMapItem cmi;
+      if (_dropMode)
+        cmi.Folder = _dropPath;
+      else
+        cmi.Folder = fs2us(folderPrefix);
+      cmi.ArcName = CreateArchiveName(_fileNames, _fileNames.Size() == 1 ? &fi0 : NULL);
+      AddCommand(kCompress, mainString, cmi);
+      MyInsertMenu(popupMenu, (UINT)popupMenu.GetItemCount(), currentCommandID++, mainString, bitmap);
+    }
+  }
+
+  // **************** NanaZip Modification Start ****************
+  if (!_dropMode && !_isMenuForFM && _fileNames.Size() &&
+      !SelectionHasDriveRoot(_fileNames) && currentCommandID < commandIDLast)
+  {
+    CCommandMapItem cmi;
+    cmi.CommandInternalID = kRename;
+    cmi.Verb = "SevenZip.Rename";
+    cmi.UserString = (L"重命名" +
+        NanaZip::Renaming::SelectionNoun(ToWidePaths(_fileNames)) + L"…").c_str();
+    _commandMap.Add(cmi);
+    UINT position = (UINT)popupMenu.GetItemCount();
+    if (position > 2)
+      position = 2;
+    MyInsertMenu(popupMenu, position, currentCommandID++, cmi.UserString, bitmap);
+  }
+  // **************** NanaZip Modification End ****************
   popupMenu.Detach();
 
   /*
@@ -1035,12 +2471,6 @@ int CZipContextMenu::FindVerb(const UString &verb)
       return i;
   return -1;
 }
-
-static UString Get7zFmPath()
-{
-  return fs2us(NWindows::NDLL::GetModuleDirPrefix()) + L"NanaZip.Modern.FileManager.exe";
-}
-
 
 #ifdef UNDER_CE
   #define MY__IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)
@@ -1162,22 +2592,58 @@ STDMETHODIMP CZipContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO commandInfo)
 
 HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
 {
+  NanaZip::DialogAppearance::DialogScope Appearance;
   const ECommandInternalID cmdID = cmi.CommandInternalID;
 
   try
   {
     switch (cmdID)
     {
+      // **************** NanaZip Modification Start ****************
+      case kRename:
+      {
+        NanaZip::Renaming::Show(ToWidePaths(_fileNames));
+        break;
+      }
+      // **************** NanaZip Modification End ****************
+      case kNewFolderDate:
+      {
+        CreateDateFolder(cmi.Folder);
+        break;
+      }
+      case kNewFolderBatch:
+      {
+        CreateBatchFolders(cmi.Folder);
+        break;
+      }
+      case kFilesToFolder:
+      {
+        MoveFilesIntoFolder(_fileNames);
+        break;
+      }
+      case kUnwrapFolder:
+      {
+        RemoveEnclosingFolders(_fileNames);
+        break;
+      }
       case kOpen:
       {
-        UString params;
-        params = GetQuotedString(_fileNames[0]);
-        if (!cmi.ArcType.IsEmpty())
-        {
-          params += " -t";
-          params += cmi.ArcType;
-        }
-        MyCreateProcess(Get7zFmPath(), params);
+        OpenArchiveInFileManager(_fileNames[0]);
+        break;
+      }
+      case kCopyFileAddress:
+      {
+        CopySelectedFileText(_fileNames, 0);
+        break;
+      }
+      case kCopyFileName:
+      {
+        CopySelectedFileText(_fileNames, 1);
+        break;
+      }
+      case kCopyFileNameNoExt:
+      {
+        CopySelectedFileText(_fileNames, 2);
         break;
       }
       case kExtract:
@@ -1195,13 +2661,17 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
       }
 #endif // ******** Annotated 7-Zip Mainline Source Code snippet End ********
       case kExtractHereSmart:
+      case kExtractHereDelete:
       case kExtractTo:
+      case kExtractToDelete:
       {
         ExtractArchives(_fileNames, cmi.Folder,
             (cmdID == kExtract), // showDialog
-            (cmdID == kExtractTo) && _elimDup.Val, // elimDup
+            (cmdID == kExtractTo || cmdID == kExtractToDelete) && _elimDup.Val, // elimDup
             _writeZone,
-            (cmdID == kExtractHereSmart)
+            (cmdID == kExtractHereSmart),
+            false, // openFolder
+            (cmdID == kExtractHereDelete || cmdID == kExtractToDelete) // deleteArchive
             );
         break;
       }
@@ -1217,6 +2687,9 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
       case kCompressTo7zEmail:
       case kCompressToZip:
       case kCompressToZipEmail:
+      // **************** NanaZip Modification Start ****************
+      case kCompressToZipDelete:
+      // **************** NanaZip Modification End ****************
       {
         const bool email =
             (cmdID == kCompressEmail) ||
@@ -1226,11 +2699,16 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
             (cmdID == kCompress) ||
             (cmdID == kCompressEmail);
         const bool addExtension = (cmdID == kCompress || cmdID == kCompressEmail);
+        // **************** NanaZip Modification Start ****************
+        const bool deleteSources =
+            (cmdID == kCompressToZipDelete);
+        // **************** NanaZip Modification End ****************
         CompressFiles(cmi.Folder,
             cmi.ArcName, cmi.ArcType,
             addExtension,
             _fileNames, email, showDialog,
-            false // waitFinish
+            false, // waitFinish
+            deleteSources
             );
         break;
       }

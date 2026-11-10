@@ -20,11 +20,7 @@ static UString CreateArchiveName(const NFind::CFileInfo &fi, bool keepName)
   {
     int dotPos = resultName.ReverseFind_Dot();
     if (dotPos > 0)
-    {
-      FString archiveName2 = resultName.Left((unsigned)dotPos);
-      if (archiveName2.ReverseFind_Dot() < 0)
-        resultName = archiveName2;
-    }
+      resultName = resultName.Left((unsigned)dotPos);
   }
   return Get_Correct_FsFile_Name(fs2us(resultName));
 }
@@ -63,11 +59,7 @@ static FString CreateArchiveName2(const FString &path, bool fromPrev, bool keepN
       {
         int dotPos = resultName.ReverseFind_Dot();
         if (dotPos > 0)
-        {
-          FString name2 = resultName.Left((unsigned)dotPos);
-          if (name2.ReverseFind_Dot() < 0)
-            resultName = name2;
-        }
+          resultName = resultName.Left((unsigned)dotPos);
       }
     }
   }

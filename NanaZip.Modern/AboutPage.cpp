@@ -8,8 +8,6 @@
 
 #include <winrt/Windows.UI.Xaml.Documents.h>
 
-#include <Mile.Project.Version.h>
-
 namespace winrt::NanaZip::Modern::implementation
 {
     AboutPage::AboutPage(
@@ -33,10 +31,7 @@ namespace winrt::NanaZip::Modern::implementation
         }
         ::SetWindowTextW(this->m_WindowHandle, WindowTitle.c_str());
 
-        std::wstring Version = std::wstring(
-            "NanaZip " MILE_PROJECT_VERSION_STRING);
-        Version.append(
-            L" (" MILE_PROJECT_DOT_VERSION_STRING L")");
+        std::wstring Version = L"NanaZip 1.0.1.20";
 #if defined(_M_AMD64)
         Version.append(L" (x64)");
 #elif defined(_M_ARM64)

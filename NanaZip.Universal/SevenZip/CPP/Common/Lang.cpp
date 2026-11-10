@@ -1,4 +1,4 @@
-﻿// Common/Lang.cpp
+// Common/Lang.cpp
 
 #include "StdAfx.h"
 
@@ -219,11 +219,9 @@ const wchar_t* CLang::Get(UInt32 id) const throw()
     }
     return Iterator->second;
 #else
-    if (::K7ModernAvailable())
-    {
-        return ::K7ModernGetLegacyStringResource(id);
-    }
-    return nullptr;
+    // The resource map does not need the XAML app object. Gating on
+    // K7ModernAvailable() left every classic dialog on the English .rc text.
+    return ::K7ModernGetLegacyStringResource(id);
 #endif
 }
 

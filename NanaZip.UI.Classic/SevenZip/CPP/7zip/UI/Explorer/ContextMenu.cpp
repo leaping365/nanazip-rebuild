@@ -2,6 +2,19 @@
 
 #include "StdAfx.h"
 
+// **************** NanaZip Modification Start ****************
+#include "../../../../../../NanaZip.UI.Shared/Rename.h"
+#include "../../../../../../NanaZip.UI.Shared/DialogAppearance.h"
+#include "../../../Common/MyString.h"
+static std::vector<std::wstring> RenamePaths(UStringVector const& Paths)
+{
+  std::vector<std::wstring> Result;
+  for (unsigned Index = 0; Index < Paths.Size(); ++Index)
+    Result.push_back(Paths[Index].Ptr());
+  return Result;
+}
+// **************** NanaZip Modification End ****************
+
 #include "../../../Common/ComTry.h"
 #include "../../../Common/IntToString.h"
 #include "../../../Common/StringConvert.h"
@@ -216,6 +229,8 @@ static const CContextMenuCommand g_Commands[] =
   CMD_REC( kExtractHere, "ExtractHere", IDS_CONTEXT_EXTRACT_HERE),
   // **************** NanaZip Modification Start ****************
   CMD_REC( kExtractHereSmart, "ExtractHereSmart", IDS_CONTEXT_EXTRACT_HERE_SMART),
+  CMD_REC( kExtractHereDelete, "ExtractHereDelete", IDS_CONTEXT_EXTRACT_HERE_DELETE),
+  CMD_REC( kExtractToDelete, "ExtractToDelete", IDS_CONTEXT_EXTRACT_TO_DELETE),
   // **************** NanaZip Modification End ****************
   CMD_REC( kExtractTo,   "ExtractTo",   IDS_CONTEXT_EXTRACT_TO),
   CMD_REC( kTest,        "Test",        IDS_CONTEXT_TEST),
@@ -224,7 +239,10 @@ static const CContextMenuCommand g_Commands[] =
   CMD_REC( kCompressTo7z,       "CompressTo7z",       IDS_CONTEXT_COMPRESS_TO),
   CMD_REC( kCompressTo7zEmail,  "CompressTo7zEmail",  IDS_CONTEXT_COMPRESS_TO_EMAIL),
   CMD_REC( kCompressToZip,      "CompressToZip",      IDS_CONTEXT_COMPRESS_TO),
-  CMD_REC( kCompressToZipEmail, "CompressToZipEmail", IDS_CONTEXT_COMPRESS_TO_EMAIL)
+  CMD_REC( kCompressToZipEmail, "CompressToZipEmail", IDS_CONTEXT_COMPRESS_TO_EMAIL),
+  // **************** NanaZip Modification Start ****************
+  CMD_REC( kCompressToZipDelete, "CompressToZipDelete", IDS_CONTEXT_COMPRESS_TO_DELETE)
+  // **************** NanaZip Modification End ****************
 };
 
 
@@ -279,6 +297,160 @@ static UString LangStringAlt(UInt32 id, const char *altString)
   if (s.IsEmpty())
     s = altString;
   return s;
+}
+
+static const wchar_t *CopyFileAddressTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件地址";
+  return L"Copy file address";
+}
+
+static const wchar_t *CopyFileNameTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件名";
+  return L"Copy file name";
+}
+
+static const wchar_t *CopyFileNameNoExtTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件名（无扩展名）";
+  return L"Copy file name (no extension)";
+}
+
+static const wchar_t *CopyFolderAddressTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件夹地址";
+  return L"Copy folder address";
+}
+
+static const wchar_t *CopyFolderNameTitle()
+{
+  const LANGID lang = ::GetUserDefaultUILanguage();
+  if (PRIMARYLANGID(lang) == LANG_CHINESE)
+    return L"复制文件夹名";
+  return L"Copy folder name";
+}
+
+static bool SelectionIsOnlyFolders(const UStringVector &paths)
+{
+  if (paths.Size() == 0)
+    return false;
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    const DWORD attr = ::GetFileAttributesW(paths[i]);
+    if (attr == INVALID_FILE_ATTRIBUTES || (attr & FILE_ATTRIBUTE_DIRECTORY) == 0)
+      return false;
+  }
+  return true;
+}
+
+static bool TextHasSpace(const UString &s)
+{
+  for (unsigned i = 0; i < s.Len(); i++)
+    if (s[i] == L' ')
+      return true;
+  return false;
+}
+
+static UString QuoteIfHasSpace(const UString &s)
+{
+  if (!TextHasSpace(s))
+    return s;
+  UString q;
+  q += L'"';
+  q += s;
+  q += L'"';
+  return q;
+}
+
+static UString BaseNameOf(const UString &path)
+{
+  const int slash = path.ReverseFind_PathSepar();
+  if (slash < 0)
+    return path;
+  return path.Ptr((unsigned)slash + 1);
+}
+
+static UString NameWithoutLastExt(const UString &name)
+{
+  const int dot = name.ReverseFind_Dot();
+  if (dot <= 0)
+    return name;
+  return name.Left((unsigned)dot);
+}
+
+static bool CopyUnicodeTextToClipboard(const UString &text)
+{
+  if (text.IsEmpty())
+    return false;
+  const SIZE_T bytes = ((SIZE_T)text.Len() + 1) * sizeof(wchar_t);
+  HGLOBAL mem = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
+  if (!mem)
+    return false;
+  void *dest = ::GlobalLock(mem);
+  if (!dest)
+  {
+    ::GlobalFree(mem);
+    return false;
+  }
+  ::CopyMemory(dest, text.Ptr(), bytes);
+  ::GlobalUnlock(mem);
+  bool opened = false;
+  for (int attempt = 0; attempt < 8; attempt++)
+  {
+    if (::OpenClipboard(NULL))
+    {
+      opened = true;
+      break;
+    }
+    ::Sleep(15);
+  }
+  if (!opened)
+  {
+    ::GlobalFree(mem);
+    return false;
+  }
+  if (!::EmptyClipboard())
+  {
+    ::CloseClipboard();
+    ::GlobalFree(mem);
+    return false;
+  }
+  if (!::SetClipboardData(CF_UNICODETEXT, mem))
+  {
+    ::CloseClipboard();
+    ::GlobalFree(mem);
+    return false;
+  }
+  ::CloseClipboard();
+  return true;
+}
+
+static void CopySelectedFileText(const UStringVector &paths, int kind)
+{
+  UString text;
+  for (unsigned i = 0; i < paths.Size(); i++)
+  {
+    UString line = paths[i];
+    if (kind != 0)
+    {
+      line = BaseNameOf(line);
+      if (kind == 2)
+        line = NameWithoutLastExt(line);
+    }
+    if (!text.IsEmpty())
+      text += L"\r\n";
+    text += QuoteIfHasSpace(line);
+  }
+  CopyUnicodeTextToClipboard(text);
 }
 
   
@@ -485,6 +657,34 @@ static bool DoNeedExtract(const FString &name)
   return !FindExt(kExtractExcludeExtensions, name);
 }
 
+// Real archive types. .exe/.msi installers stay compressible.
+static const char * const kRecognizedArchiveExtensions =
+  " 7z zip zipx rar r00 cab iso tar tgz tbz tbz2 txz"
+  " gz bz2 xz zst lz liz lz4 lz5 lzma lzh lha arj z cpio wim swm xar"
+  " ";
+
+static bool IsRecognizedArchiveName(const FString &name)
+{
+  if (FindExt(kRecognizedArchiveExtensions, name))
+    return true;
+
+  int dotPos = name.ReverseFind_Dot();
+  if (dotPos <= 0)
+    return false;
+
+  AString ext;
+  for (unsigned pos = (unsigned)dotPos + 1; name[pos] != 0; pos++)
+  {
+    wchar_t c = name[pos];
+    if (c >= 0x80)
+      return false;
+    ext += (char)MyCharLower_Ascii((char)c);
+  }
+  if (ext.IsEqualTo_Ascii_NoCase("001"))
+    return IsRecognizedArchiveName(name.Left(dotPos));
+  return false;
+}
+
 // we must use diferent Verbs for Popup subMenu.
 void CZipContextMenu::AddMapItem_ForSubMenu(const char *verb)
 {
@@ -644,14 +844,8 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
   {
     if (!fi0.IsDir() && DoNeedExtract(fi0.Name))
     {
-      // Open
+      // kOpen stays cleared, so the old "Open archive" item is not shown here.
       bool thereIsMainOpenItem = ((contextMenuFlags & NContextMenuFlags::kOpen) != 0);
-      if (thereIsMainOpenItem)
-      {
-        CCommandMapItem cmi;
-        AddCommand(kOpen, mainString, cmi);
-        MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
-      }
       if ((contextMenuFlags & NContextMenuFlags::kOpenAs) != 0
           // && (!thereIsMainOpenItem || !FindExt(kNoOpenAsExtensions, fi0.Name))
           && hMenu // we want to reduce number of menu items below 16
@@ -746,6 +940,16 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
         }
 
         // **************** NanaZip Modification Start ****************
+        if ((contextMenuFlags & NContextMenuFlags::kExtractHereDelete) != 0)
+        {
+          CCommandMapItem cmi;
+          cmi.Folder = baseFolder;
+          AddCommand(kExtractHereDelete, mainString, cmi);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, mainString, bitmap);
+        }
+        // **************** NanaZip Modification End ****************
+
+        // **************** NanaZip Modification Start ****************
         if ((contextMenuFlags & NContextMenuFlags::kExtractHereSmart) != 0)
         {
           // Extract Here
@@ -767,6 +971,19 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
           Set_UserString_in_LastCommand(s);
           MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
         }
+
+        // **************** NanaZip Modification Start ****************
+        if ((contextMenuFlags & NContextMenuFlags::kExtractToDelete) != 0)
+        {
+          CCommandMapItem cmi;
+          UString s;
+          cmi.Folder = baseFolder + specFolder;
+          AddCommand(kExtractToDelete, s, cmi);
+          MyFormatNew_ReducedName(s, specFolder);
+          Set_UserString_in_LastCommand(s);
+          MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
+        }
+        // **************** NanaZip Modification End ****************
       }
 
       if ((contextMenuFlags & NContextMenuFlags::kTest) != 0)
@@ -778,6 +995,20 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
       }
     }
     
+    bool onlyArchives = (_fileNames.Size() > 0 && !fi0.IsDir() && IsRecognizedArchiveName(fi0.Name));
+    if (onlyArchives)
+    {
+      for (unsigned i = 1; i < _fileNames.Size(); i++)
+      {
+        NFind::CFileInfo fi;
+        if (!fi.Find(us2fs(_fileNames[i])) || fi.IsDir() || !IsRecognizedArchiveName(fi.Name))
+        {
+          onlyArchives = false;
+          break;
+        }
+      }
+    }
+
     const UString arcName = CreateArchiveName(_fileNames, _fileNames.Size() == 1 ? &fi0 : NULL);
 
     UString arcName7z = arcName;
@@ -785,8 +1016,8 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     UString arcNameZip = arcName;
     arcNameZip += ".zip";
 
-    // Compress
-    if ((contextMenuFlags & NContextMenuFlags::kCompress) != 0)
+    // Compress. Skip when every selected item is already an archive.
+    if (!onlyArchives && (contextMenuFlags & NContextMenuFlags::kCompress) != 0)
     {
       CCommandMapItem cmi;
       if (_dropMode)
@@ -843,7 +1074,8 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     #endif
 
     // CompressToZip
-    if (contextMenuFlags & NContextMenuFlags::kCompressToZip &&
+    if (!onlyArchives &&
+        contextMenuFlags & NContextMenuFlags::kCompressToZip &&
         !arcNameZip.IsEqualTo_NoCase(fs2us(fi0.Name)))
     {
       CCommandMapItem cmi;
@@ -859,6 +1091,26 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
       Set_UserString_in_LastCommand(s);
       MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
     }
+
+    // **************** NanaZip Modification Start ****************
+    if (!onlyArchives &&
+        contextMenuFlags & NContextMenuFlags::kCompressToZipDelete &&
+        !arcNameZip.IsEqualTo_NoCase(fs2us(fi0.Name)))
+    {
+      CCommandMapItem cmi;
+      UString s;
+      if (_dropMode)
+        cmi.Folder = _dropPath;
+      else
+        cmi.Folder = fs2us(folderPrefix);
+      cmi.ArcName = arcNameZip;
+      cmi.ArcType = "zip";
+      AddCommand(kCompressToZipDelete, s, cmi);
+      MyFormatNew_ReducedName(s, arcNameZip);
+      Set_UserString_in_LastCommand(s);
+      MyInsertMenu(popupMenu, subIndex++, currentCommandID++, s, bitmap);
+    }
+    // **************** NanaZip Modification End ****************
 
     #ifdef EMAIL_SUPPORT
     // CompressToZipEmail
@@ -989,6 +1241,64 @@ STDMETHODIMP CZipContextMenu::QueryContextMenu(HMENU hMenu, UINT indexMenu,
     }
   }
 
+  // Separator, then copy items.
+  {
+    const bool menuHasItems = popupMenu && popupMenu.GetItemCount() > 0;
+    const bool onlyFolders = SelectionIsOnlyFolders(_fileNames);
+    const unsigned copyCount = onlyFolders ? 2u : 3u;
+    const UINT room = copyCount - 1;
+    if (_fileNames.Size() > 0 && menuHasItems
+        && currentCommandID + room < commandIDLast)
+    {
+      if (menuHasItems && popupMenu)
+      {
+        CMenuItem mi;
+        mi.fType = MFT_SEPARATOR;
+        mi.fMask = MIIM_TYPE;
+        popupMenu.InsertItem((int)popupMenu.GetItemCount(), true, mi);
+      }
+
+      const CZipContextMenu::ECommandInternalID copyIds[3] = {
+        kCopyFileAddress, kCopyFileName, kCopyFileNameNoExt
+      };
+      const wchar_t *copyTitles[3] = {
+        onlyFolders ? CopyFolderAddressTitle() : CopyFileAddressTitle(),
+        onlyFolders ? CopyFolderNameTitle() : CopyFileNameTitle(),
+        CopyFileNameNoExtTitle()
+      };
+      const char *copyVerbs[3] = {
+        ".CopyFileAddress", ".CopyFileName", ".CopyFileNameNoExt"
+      };
+      for (unsigned i = 0; i < copyCount; i++)
+      {
+        CCommandMapItem cmi;
+        cmi.CommandInternalID = copyIds[i];
+        cmi.Verb = kMainVerb;
+        cmi.Verb += copyVerbs[i];
+        cmi.UserString = copyTitles[i];
+        _commandMap.Add(cmi);
+        MyInsertMenu(popupMenu, (UINT)popupMenu.GetItemCount(), currentCommandID++, cmi.UserString, bitmap);
+      }
+    }
+
+  }
+
+  // **************** NanaZip Modification Start ****************
+  if (!_dropMode && !_isMenuForFM && _fileNames.Size() &&
+      currentCommandID < commandIDLast)
+  {
+    CCommandMapItem cmi;
+    cmi.CommandInternalID = kRename;
+    cmi.Verb = "SevenZip.Rename";
+    cmi.UserString = (L"重命名" + NanaZip::Renaming::SelectionNoun(
+        RenamePaths(_fileNames)) + L"…").c_str();
+    _commandMap.Add(cmi);
+    UINT Position = (UINT)popupMenu.GetItemCount();
+    if (Position > 2)
+      Position = 2;
+    MyInsertMenu(popupMenu, Position, currentCommandID++, cmi.UserString, bitmap);
+  }
+  // **************** NanaZip Modification End ****************
   popupMenu.Detach();
 
   /*
@@ -1035,12 +1345,6 @@ int CZipContextMenu::FindVerb(const UString &verb)
       return i;
   return -1;
 }
-
-static UString Get7zFmPath()
-{
-  return fs2us(NWindows::NDLL::GetModuleDirPrefix()) + L"NanaZip.Modern.FileManager.exe";
-}
-
 
 #ifdef UNDER_CE
   #define MY__IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)
@@ -1162,22 +1466,38 @@ STDMETHODIMP CZipContextMenu::InvokeCommand(LPCMINVOKECOMMANDINFO commandInfo)
 
 HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
 {
+  NanaZip::DialogAppearance::DialogScope Appearance;
   const ECommandInternalID cmdID = cmi.CommandInternalID;
 
   try
   {
     switch (cmdID)
     {
+      // **************** NanaZip Modification Start ****************
+      case kRename:
+      {
+        NanaZip::Renaming::Show(RenamePaths(_fileNames));
+        break;
+      }
+      // **************** NanaZip Modification End ****************
       case kOpen:
       {
-        UString params;
-        params = GetQuotedString(_fileNames[0]);
-        if (!cmi.ArcType.IsEmpty())
-        {
-          params += " -t";
-          params += cmi.ArcType;
-        }
-        MyCreateProcess(Get7zFmPath(), params);
+        OpenArchiveInFileManager(_fileNames[0]);
+        break;
+      }
+      case kCopyFileAddress:
+      {
+        CopySelectedFileText(_fileNames, 0);
+        break;
+      }
+      case kCopyFileName:
+      {
+        CopySelectedFileText(_fileNames, 1);
+        break;
+      }
+      case kCopyFileNameNoExt:
+      {
+        CopySelectedFileText(_fileNames, 2);
         break;
       }
       case kExtract:
@@ -1195,13 +1515,17 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
       }
 #endif // ******** Annotated 7-Zip Mainline Source Code snippet End ********
       case kExtractHereSmart:
+      case kExtractHereDelete:
       case kExtractTo:
+      case kExtractToDelete:
       {
         ExtractArchives(_fileNames, cmi.Folder,
             (cmdID == kExtract), // showDialog
-            (cmdID == kExtractTo) && _elimDup.Val, // elimDup
+            (cmdID == kExtractTo || cmdID == kExtractToDelete) && _elimDup.Val, // elimDup
             _writeZone,
-            (cmdID == kExtractHereSmart)
+            (cmdID == kExtractHereSmart),
+            false, // openFolder
+            (cmdID == kExtractHereDelete || cmdID == kExtractToDelete) // deleteArchive
             );
         break;
       }
@@ -1217,6 +1541,9 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
       case kCompressTo7zEmail:
       case kCompressToZip:
       case kCompressToZipEmail:
+      // **************** NanaZip Modification Start ****************
+      case kCompressToZipDelete:
+      // **************** NanaZip Modification End ****************
       {
         const bool email =
             (cmdID == kCompressEmail) ||
@@ -1226,11 +1553,16 @@ HRESULT CZipContextMenu::InvokeCommandCommon(const CCommandMapItem &cmi)
             (cmdID == kCompress) ||
             (cmdID == kCompressEmail);
         const bool addExtension = (cmdID == kCompress || cmdID == kCompressEmail);
+        // **************** NanaZip Modification Start ****************
+        const bool deleteSources =
+            (cmdID == kCompressToZipDelete);
+        // **************** NanaZip Modification End ****************
         CompressFiles(cmi.Folder,
             cmi.ArcName, cmi.ArcType,
             addExtension,
             _fileNames, email, showDialog,
-            false // waitFinish
+            false, // waitFinish
+            deleteSources
             );
         break;
       }

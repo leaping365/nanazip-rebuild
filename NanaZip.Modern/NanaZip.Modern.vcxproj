@@ -3,6 +3,8 @@
   <PropertyGroup Label="Globals">
     <ProjectGuid>{1AB11057-1F48-44D2-A913-C945BFC1AA93}</ProjectGuid>
     <RootNamespace>NanaZip.Modern</RootNamespace>
+    <PriIndexNameOverridden>true</PriIndexNameOverridden>
+    <PriIndexNameOverride>NanaZip.LocalDebug.ContextMenu</PriIndexNameOverride>
     <MileProjectType>DynamicLibrary</MileProjectType>
     <MileProjectManifestFile>NanaZip.Modern.manifest</MileProjectManifestFile>
     <MinimalCoreWin>false</MinimalCoreWin>
@@ -39,6 +41,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup>
     <ClCompile>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8</AdditionalOptions>
       <PreprocessorDefinitions>WINRT_NO_SOURCE_LOCATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -481,6 +484,11 @@
     <PRIResource Include="Strings\zh-Hant\ProgressPage.resw" />
   </ItemGroup>
   <Import Sdk="Mile.Project.Configurations" Project="Mile.Project.Cpp.targets" />
+  <PropertyGroup>
+    <!-- XAML looks up this resource-map name. It must match the MSIX package name
+         so the packaged resources.pri can satisfy it. -->
+    <PriIndexName>NanaZip.LocalDebug.ContextMenu</PriIndexName>
+  </PropertyGroup>
   <!--
   XamlAddCppWinRTMergedWinmd
 
@@ -488,4 +496,9 @@
   hybrid C++/WinRT and C++/CX support, due to a bug in the check.
   -->
   <Target Name="XamlAddCppWinRTMergedWinmd" AfterTargets="CppWinRTMergeProjectWinMDInputs" />
+  <Target Name="ForcePackagePriIndexName" BeforeTargets="MarkupCompilePass1;MarkupCompilePass2">
+    <PropertyGroup>
+      <PriIndexName>NanaZip.LocalDebug.ContextMenu</PriIndexName>
+    </PropertyGroup>
+  </Target>
 </Project>

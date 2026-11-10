@@ -1,4 +1,4 @@
-﻿// Extract.h
+// Extract.h
 
 #ifndef ZIP7_INC_EXTRACT_H
 #define ZIP7_INC_EXTRACT_H
@@ -68,6 +68,7 @@ struct CExtractOptions: public CExtractOptionsBase
   bool TestMode;
   // **************** NanaZip Modification Start ****************
   CBoolPair OpenFolder;
+  CBoolPair DeleteArchive;
   // **************** NanaZip Modification End ****************
   
   // bool ShowDialog;
@@ -102,14 +103,19 @@ struct CDecompressStat
   UInt64 NumAltStreams;
   // **************** NanaZip Modification Start ****************
   FString OutDir;
+  /* Archives opened and extracted without a fatal return from Extract().
+     Filled only when DeleteArchive is set. The caller still checks its own
+     error counters before deleting, so one failed archive keeps the batch. */
+  FStringVector ExtractedArcPaths;
   // **************** NanaZip Modification End ****************
 
   void Clear()
   {
     NumArchives = UnpackSize = AltStreams_UnpackSize = PackSize = NumFolders = NumFiles = NumAltStreams = 0;
-    // **************** NanaZip Modification Start ****************
+  // **************** NanaZip Modification Start ****************
     OutDir.Empty();
-    // **************** NanaZip Modification End ****************
+    ExtractedArcPaths.Clear();
+  // **************** NanaZip Modification End ****************
   }
 };
 
@@ -129,5 +135,12 @@ HRESULT Extract(
     #endif
     UString &errorMessage,
     CDecompressStat &st);
+
+// **************** NanaZip Modification Start ****************
+/* Removes source archives after extraction. The Recycle Bin is preferred.
+   SHFileOperationW refuses paths that are not shorter than MAX_PATH, and some
+   volumes have no Recycle Bin, so DeleteFileAlways is the fallback. */
+void DeleteExtractedArchives(const FStringVector &paths, const FString &outDir);
+// **************** NanaZip Modification End ****************
 
 #endif

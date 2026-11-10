@@ -1,4 +1,4 @@
-﻿// MenuPage.cpp
+// MenuPage.cpp
 
 #include "StdAfx.h"
 
@@ -52,13 +52,20 @@ static const CContextMenuItem kMenuItems[] =
   { IDS_CONTEXT_EXTRACT, kExtract },
   { IDS_CONTEXT_EXTRACT_HERE, kExtractHere },
 // **************** NanaZip Modification Start ****************
+  { IDS_CONTEXT_EXTRACT_HERE_DELETE, kExtractHereDelete },
   { IDS_CONTEXT_EXTRACT_HERE_SMART, kExtractHereSmart },
 // **************** NanaZip Modification End ****************
   { IDS_CONTEXT_EXTRACT_TO, kExtractTo },
+// **************** NanaZip Modification Start ****************
+  { IDS_CONTEXT_EXTRACT_TO_DELETE, kExtractToDelete },
+// **************** NanaZip Modification End ****************
 
   { IDS_CONTEXT_COMPRESS, kCompress },
   { IDS_CONTEXT_COMPRESS_TO, kCompressTo7z },
   { IDS_CONTEXT_COMPRESS_TO, kCompressToZip },
+// **************** NanaZip Modification Start ****************
+  { IDS_CONTEXT_COMPRESS_TO_DELETE, kCompressToZipDelete },
+// **************** NanaZip Modification End ****************
 
   #ifndef UNDER_CE
   { IDS_CONTEXT_COMPRESS_EMAIL, kCompressEmail },
@@ -165,12 +172,18 @@ bool CMenuPage::OnInit()
     switch (menuItem.ControlID)
     {
       case IDS_CONTEXT_EXTRACT_TO:
+      // **************** NanaZip Modification Start ****************
+      case IDS_CONTEXT_EXTRACT_TO_DELETE:
+      // **************** NanaZip Modification End ****************
       {
         s = MyFormatNew(s, LangString(IDS_CONTEXT_FOLDER));
         break;
       }
       case IDS_CONTEXT_COMPRESS_TO:
       case IDS_CONTEXT_COMPRESS_TO_EMAIL:
+      // **************** NanaZip Modification Start ****************
+      case IDS_CONTEXT_COMPRESS_TO_DELETE:
+      // **************** NanaZip Modification End ****************
       {
         UString s2 = LangString(IDS_CONTEXT_ARCHIVE);
         switch (menuItem.Flag)
@@ -181,6 +194,9 @@ bool CMenuPage::OnInit()
             break;
           case kCompressToZip:
           case kCompressToZipEmail:
+          // **************** NanaZip Modification Start ****************
+          case kCompressToZipDelete:
+          // **************** NanaZip Modification End ****************
             s2 += (".zip");
             break;
         }

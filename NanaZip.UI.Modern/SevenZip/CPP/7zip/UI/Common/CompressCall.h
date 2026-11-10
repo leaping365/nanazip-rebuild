@@ -1,4 +1,4 @@
-﻿// CompressCall.h
+// CompressCall.h
 
 #ifndef __COMPRESS_CALL_H
 #define __COMPRESS_CALL_H
@@ -7,17 +7,25 @@
 
 UString GetQuotedString(const UString &s);
 
+// Opens one archive in the packaged file-manager window (same activation
+// as the desktop shortcut) and passes the archive path on the command line.
+void OpenArchiveInFileManager(const UString &archivePath);
+
 HRESULT CompressFiles(
     const UString &arcPathPrefix,
     const UString &arcName,
     const UString &arcType,
     bool addExtension,
     const UStringVector &names,
-    bool email, bool showDialog, bool waitFinish);
+    bool email, bool showDialog, bool waitFinish
+    // **************** NanaZip Modification Start ****************
+    , bool deleteSources = false
+    // **************** NanaZip Modification End ****************
+    );
 
 // **************** NanaZip Modification Start ****************
 // void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone);
-void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract = false, bool openFolder = false);
+void ExtractArchives(const UStringVector &arcPaths, const UString &outFolder, bool showDialog, bool elimDup, UInt32 writeZone, bool smartExtract = false, bool openFolder = false, bool deleteArchive = false);
 // **************** NanaZip Modification End ****************
 void TestArchives(const UStringVector &arcPaths, bool hashMode = false);
 

@@ -27,7 +27,7 @@
   <Import Project="..\NanaZip.Modern\NanaZip.Modern.props" />
   <ItemDefinitionGroup>
     <ClCompile>
-      <AdditionalOptions>%(AdditionalOptions) /Wv:18</AdditionalOptions>
+      <AdditionalOptions>%(AdditionalOptions) /utf-8 /Wv:18</AdditionalOptions>
       <PreprocessorDefinitions>LANG;WIN_LONG_PATH;WINRT_NO_SOURCE_LOCATION;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
@@ -38,6 +38,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="..\NanaZip.UI.Shared\Rename.Model.cpp" />
+    <ClCompile Include="..\NanaZip.UI.Shared\Rename.Dialog.cpp" />
+    <ClInclude Include="..\NanaZip.UI.Shared\Rename.h" />
+    <ClInclude Include="..\NanaZip.UI.Shared\DialogAppearance.h" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\PropertyName.cpp" />
     <ClCompile Include="SevenZip\CPP\7zip\UI\FileManager\StringUtils.cpp" />
     <ClCompile Include="SevenZip\C\CpuArch.c" />

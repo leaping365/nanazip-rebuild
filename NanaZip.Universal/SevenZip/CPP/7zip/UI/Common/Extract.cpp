@@ -1,4 +1,4 @@
-﻿// Extract.cpp
+// Extract.cpp
 
 #include "StdAfx.h"
 
@@ -19,6 +19,20 @@
 // **************** NanaZip Modification Start ****************
 #include <set>
 #include <string>
+
+#include "../../../Common/MyBuffer.h"
+#include "../../../Windows/FileFind.h"
+
+#ifdef _WIN32
+#include <shellapi.h>
+#include <shlobj.h>
+#include <shobjidl.h>
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "ole32.lib")
+#ifndef FOFX_RECYCLEONDELETE
+#define FOFX_RECYCLEONDELETE 0x00080000
+#endif
+#endif
 // **************** NanaZip Modification End ****************
 
 using namespace NWindows;
@@ -222,7 +236,10 @@ static HRESULT DecompressArchive(
           break;
       }
       if (firstLevelSet.size() > 1)
+      {
         ecs->OutDir += replaceName;
+        NFile::NName::NormalizeDirPathPrefix(ecs->OutDir);
+      }
     }
     // **************** NanaZip Modification End ****************
 
@@ -363,6 +380,72 @@ int Find_FileName_InSortedVector(const UStringVector &fileNames, const UString &
 }
 
 
+// **************** NanaZip Modification Start ****************
+static bool IsTrailingPathSeparator(wchar_t c)
+{
+  return c == FCHAR_PATH_SEPARATOR || c == L'/';
+}
+
+static FString TrimTrailingSeparators(const FString &path)
+{
+  FString s = path;
+  while (!s.IsEmpty() && IsTrailingPathSeparator(s.Back()))
+    s.DeleteBack();
+  return s;
+}
+
+static void AddUniqueFullPath(FStringVector &paths, const FString &path)
+{
+  if (path.IsEmpty())
+    return;
+  FString fullPath;
+  if (!MyGetFullPathName(path, fullPath) || fullPath.IsEmpty())
+    return;
+  FOR_VECTOR (i, paths)
+    if (fullPath.IsEqualTo_NoCase(paths[i]))
+      return;
+  paths.Add(fullPath);
+}
+
+static bool IsOutputPathItself(const FString &path, const FString &outDir)
+{
+  if (outDir.IsEmpty())
+    return false;
+  return TrimTrailingSeparators(path).IsEqualTo_NoCase(
+      TrimTrailingSeparators(outDir));
+}
+
+static void NotifyShellOutputDir(const FString &outDir)
+{
+#ifndef _WIN32
+  (void)outDir;
+#else
+  FString path = TrimTrailingSeparators(outDir);
+  if (path.IsEmpty())
+    return;
+  ::SHChangeNotify(SHCNE_MKDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT,
+      (const wchar_t *)path.Ptr(), NULL);
+  ::SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT,
+      (const wchar_t *)path.Ptr(), NULL);
+  int slash = -1;
+  for (unsigned i = path.Len(); i-- > 0;)
+  {
+    const wchar_t c = path[i];
+    if (c == L'\\' || c == L'/')
+    {
+      slash = (int)i;
+      break;
+    }
+  }
+  if (slash > 0)
+  {
+    FString parent = path.Left((unsigned)slash);
+    ::SHChangeNotify(SHCNE_UPDATEDIR, SHCNF_PATHW | SHCNF_FLUSHNOWAIT,
+        (const wchar_t *)parent.Ptr(), NULL);
+  }
+#endif
+}
+// **************** NanaZip Modification End ****************
 
 HRESULT Extract(
     // DECL_EXTERNAL_CODECS_LOC_VARS
@@ -653,6 +736,18 @@ HRESULT Extract(
     ecs->LocalProgressSpec->OutSize = ecs->UnpackSize;
     if (!errorMessage.IsEmpty())
       return E_FAIL;
+
+    // **************** NanaZip Modification Start ****************
+    /* Record this archive only after its extract returned. The caller still
+       requires a clean batch before deleting. VolumePaths is the set of
+       volumes the opener actually used. */
+    if (options.DeleteArchive.Val && !options.TestMode && !options.StdInMode)
+    {
+      AddUniqueFullPath(st.ExtractedArcPaths, us2fs(arcPath));
+      FOR_VECTOR (v, arcLink.VolumePaths)
+        AddUniqueFullPath(st.ExtractedArcPaths, us2fs(arcLink.VolumePaths[v]));
+    }
+    // **************** NanaZip Modification End ****************
   }
 
   if (multi || thereAreNotOpenArcs)
@@ -670,6 +765,159 @@ HRESULT Extract(
   st.PackSize = ecs->LocalProgressSpec->InSize;
   // **************** NanaZip Modification Start ****************
   st.OutDir = ecs->OutDir;
+  if (!options.TestMode && !options.StdOutMode
+      && (st.NumFiles != 0 || st.NumFolders != 0))
+    NotifyShellOutputDir(st.OutDir);
   // **************** NanaZip Modification End ****************
   return S_OK;
 }
+
+// **************** NanaZip Modification Start ****************
+static void LogDelete(const wchar_t *text)
+{
+  wchar_t tempDir[MAX_PATH];
+  const DWORD n = ::GetTempPathW(MAX_PATH, tempDir);
+  if (n == 0 || n >= MAX_PATH || !text)
+    return;
+  FString logPath = tempDir;
+  logPath += L"nanazip-delete.log";
+  HANDLE h = ::CreateFileW(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+      OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+  if (h == INVALID_HANDLE_VALUE)
+    return;
+  DWORD written = 0;
+  if (::SetFilePointer(h, 0, NULL, FILE_END) == 0)
+  {
+    const wchar_t bom = 0xFEFF;
+    ::WriteFile(h, &bom, sizeof(bom), &written, NULL);
+  }
+  ::WriteFile(h, text, (DWORD)(wcslen(text) * sizeof(wchar_t)), &written, NULL);
+  const wchar_t nl[2] = { L'\r', L'\n' };
+  ::WriteFile(h, nl, sizeof(nl), &written, NULL);
+  ::CloseHandle(h);
+}
+
+static bool IsDeletableArchiveFile(const FString &path, const FString &outDir)
+{
+  /* Only the archive file itself. The extracted folder is often the archive
+     name without ".zip" ("继续教育.zip" -> "继续教育") and must stay. */
+  if (path.IsEmpty() || IsOutputPathItself(path, outDir))
+    return false;
+  if (NFind::DoesDirExist(path))
+    return false;
+  return NFind::DoesFileExist_Raw(path);
+}
+
+static bool RecycleFilesWithFileOperation(const FStringVector &files)
+{
+  const HRESULT hrInit = ::CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+  const bool didInit = (hrInit == S_OK);
+  IFileOperation *op = NULL;
+  HRESULT hr = ::CoCreateInstance(__uuidof(FileOperation), NULL, CLSCTX_ALL,
+      __uuidof(IFileOperation), (void **)&op);
+  if (FAILED(hr) || !op)
+  {
+    if (didInit)
+      ::CoUninitialize();
+    return false;
+  }
+  hr = op->SetOperationFlags(
+      FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI
+      | FOFX_RECYCLEONDELETE);
+  unsigned added = 0;
+  if (SUCCEEDED(hr))
+  {
+    FOR_VECTOR (i, files)
+    {
+      IShellItem *item = NULL;
+      hr = ::SHCreateItemFromParsingName((const wchar_t *)files[i].Ptr(), NULL,
+          __uuidof(IShellItem), (void **)&item);
+      if (FAILED(hr) || !item)
+        continue;
+      hr = op->DeleteItem(item, NULL);
+      item->Release();
+      if (SUCCEEDED(hr))
+        added++;
+    }
+  }
+  bool ok = false;
+  if (added != 0)
+  {
+    hr = op->PerformOperations();
+    ok = SUCCEEDED(hr);
+    wchar_t msg[128];
+    swprintf_s(msg, L"IFileOperation hr=%08X added=%u", (unsigned)hr, added);
+    LogDelete(msg);
+  }
+  else
+    LogDelete(L"IFileOperation added=0");
+  op->Release();
+  if (didInit)
+    ::CoUninitialize();
+  if (!ok)
+    return false;
+  FOR_VECTOR (i, files)
+    if (NFind::DoesFileExist_Raw(files[i]))
+      return false;
+  return true;
+}
+
+static void RecycleOneViaRename(const FString &path)
+{
+  /* SHFileOperation deletes a same-folder directory whose name is the file
+     name without the extension. Rename first so that match cannot happen. */
+  FString renamed = path;
+  renamed += L".~nzdel";
+  if (!::MoveFileW(path, renamed))
+  {
+    DeleteFileAlways(path);
+    return;
+  }
+  const unsigned numChars = renamed.Len() + 2;
+  CObjArray<wchar_t> list(numChars);
+  memcpy(list, (const wchar_t *)renamed.Ptr(), (renamed.Len() + 1) * sizeof(wchar_t));
+  list[renamed.Len() + 1] = 0;
+  SHFILEOPSTRUCTW fo;
+  memset(&fo, 0, sizeof(fo));
+  fo.wFunc = FO_DELETE;
+  fo.pFrom = list;
+  fo.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+  const int opRes = ::SHFileOperationW(&fo);
+  if (opRes != 0 || NFind::DoesFileExist_Raw(renamed))
+  {
+    if (!::MoveFileW(renamed, path))
+      DeleteFileAlways(renamed);
+  }
+}
+
+void DeleteExtractedArchives(const FStringVector &paths, const FString &outDir)
+{
+#ifndef _WIN32
+  (void)paths;
+  (void)outDir;
+#else
+  FStringVector files;
+  FOR_VECTOR (i, paths)
+  {
+    if (!IsDeletableArchiveFile(paths[i], outDir))
+      continue;
+    files.Add(paths[i]);
+  }
+  if (files.IsEmpty())
+  {
+    LogDelete(L"delete list empty");
+    return;
+  }
+  LogDelete(files[0]);
+  if (RecycleFilesWithFileOperation(files))
+  {
+    LogDelete(L"IFileOperation removed the archive");
+    return;
+  }
+  LogDelete(L"IFileOperation left the archive, trying rename");
+  FOR_VECTOR (i, files)
+    if (NFind::DoesFileExist_Raw(files[i]))
+      RecycleOneViaRename(files[i]);
+#endif
+}
+// **************** NanaZip Modification End ****************

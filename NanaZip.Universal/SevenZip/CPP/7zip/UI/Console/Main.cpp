@@ -1,4 +1,4 @@
-﻿// Main.cpp
+// Main.cpp
 
 #include "StdAfx.h"
 
@@ -55,6 +55,7 @@ typedef PROCESS_MEMORY_COUNTERS *PPROCESS_MEMORY_COUNTERS;
 #include "../../../Windows/ErrorMsg.h"
 #include "../../../Windows/TimeUtils.h"
 #include "../../../Windows/FileDir.h"
+#include "../../../Windows/FileFind.h"
 
 #include "../Common/ArchiveCommandLine.h"
 #include "../Common/Bench.h"
@@ -187,6 +188,9 @@ static const char * const kHelpString =
 #endif
 #endif
     "|*] : set hash function for x, e, h commands\n"
+    // **************** NanaZip Modification Start ****************
+    "  -sda[-] : delete archive after successful extraction\n"
+    // **************** NanaZip Modification End ****************
     "  -sdel : delete files after compression\n"
     "  -seml[.] : send archive by email\n"
     "  -sfx[{name}] : Create SFX archive\n"
@@ -1400,6 +1404,9 @@ int Main2(
       eo.StdOutMode = options.StdOutMode;
       eo.YesToAll = options.YesToAll;
       eo.TestMode = options.Command.IsTestCommand();
+      // **************** NanaZip Modification Start ****************
+      eo.DeleteArchive = options.DeleteArchive;
+      // **************** NanaZip Modification End ****************
       
       #ifndef Z7_SFX
       eo.Properties = options.Properties;
@@ -1527,6 +1534,22 @@ int Main2(
         }
       }
       } // if (so)
+
+      // **************** NanaZip Modification Start ****************
+      /* Nothing in the batch is removed unless every archive opened and
+         extracted without an error. The list stays empty for test mode and
+         when -sda was not passed. */
+      {
+        const FString &producedDir = stat.OutDir.IsEmpty()
+            ? eo.OutputDir : stat.OutDir;
+        if (hresultMain == S_OK && !isError && ecs->NumFileErrors == 0
+            && !eo.TestMode
+            && (stat.NumFiles != 0 || stat.NumFolders != 0)
+            && !producedDir.IsEmpty()
+            && NFile::NFind::DoesDirExist(producedDir))
+          DeleteExtractedArchives(stat.ExtractedArcPaths, producedDir);
+      }
+      // **************** NanaZip Modification End ****************
     }
     else // if_(!isExtractGroupCommand)
     {

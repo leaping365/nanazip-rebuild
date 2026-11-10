@@ -1,4 +1,4 @@
-﻿// ProcessUtils.cpp
+// ProcessUtils.cpp
 
 #include "StdAfx.h"
 
@@ -50,6 +50,31 @@ WRes CProcess::Create(LPCWSTR imageName, const UString &params, LPCWSTR curDir)
       GetQuotedString(imageName) + L' ' +
       #endif
       params;
+  {
+    wchar_t tempDir[MAX_PATH];
+    const DWORD n = ::GetTempPathW(MAX_PATH, tempDir);
+    if (n != 0 && n < MAX_PATH)
+    {
+      UString logPath = tempDir;
+      logPath += L"nanazip-cmdline.log";
+      HANDLE h = ::CreateFileW(logPath, FILE_APPEND_DATA, FILE_SHARE_READ, NULL,
+          OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+      if (h != INVALID_HANDLE_VALUE)
+      {
+        DWORD written = 0;
+        if (::SetFilePointer(h, 0, NULL, FILE_END) == 0)
+        {
+          const wchar_t bom = 0xFEFF;
+          ::WriteFile(h, &bom, sizeof(bom), &written, NULL);
+        }
+        ::WriteFile(h, (const wchar_t *)params2.Ptr(),
+            params2.Len() * sizeof(wchar_t), &written, NULL);
+        const wchar_t nl[2] = { L'\r', L'\n' };
+        ::WriteFile(h, nl, sizeof(nl), &written, NULL);
+        ::CloseHandle(h);
+      }
+    }
+  }
   #ifdef UNDER_CE
   curDir = 0;
   #else

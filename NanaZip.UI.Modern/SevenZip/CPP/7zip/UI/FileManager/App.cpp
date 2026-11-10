@@ -1,4 +1,4 @@
-﻿// App.cpp
+// App.cpp
 
 #include "StdAfx.h"
 
@@ -151,6 +151,11 @@ HRESULT CApp::CreateOnePanel(int panelIndex, const UString &mainPath, const UStr
   }
   else
     path = mainPath;
+
+  // No saved folder: open This PC so the list shows disks instead of the
+  // three-item root (Computer / Documents / Network).
+  if (path.IsEmpty())
+    path = L"Computer";
 
   int id = 1000 + 100 * panelIndex;
 
@@ -905,9 +910,8 @@ void CApp::OnNotify(int /* ctrlID */, LPNMHDR /*pnmh*/)
 
 void CApp::RefreshTitle(bool always)
 {
-  UString path = GetFocusedPanel()._currentFolderPrefix;
-  if (path.IsEmpty())
-    path = "NanaZip"; // LangString(IDS_APP_TITLE);
+  // Keep the frame title as NanaZip. The folder path stays in the address bar.
+  UString path = L"NanaZip";
   if (!always && path == PrevTitle)
     return;
   PrevTitle = path;
